@@ -12,9 +12,6 @@ services:
       - /app/node_modules
     environment:
       - REACT_APP_API_URL=http://tubik-corp.ru:24003
-      - CHOKIDAR_USEPOLLING=true
-    user: "node"
-    command: sh -c "npm install && npm start"
     depends_on:
       - backend
 
@@ -28,6 +25,4 @@ services:
       - ./backend:/app
       - ./backend/storage:/app/storage
     environment:
-      - FLASK_APP=app.py
-      - FLASK_ENV=development
       - ADMIN_PASSWORD_HASH=pbkdf2:sha256:600000$dAkKzk7cqvA6Wwkf$1a791164119b9436ead05fa12351f8519dc1782c9783b34b7f2c74b12b820de0

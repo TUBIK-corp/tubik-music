@@ -1,20 +1,23 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import Admin from './pages/Admin';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import Player from './components/Player';
+import Admin from './components/Admin';
 
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-100 py-8">
-        <div className="container mx-auto px-4">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/admin" element={<Admin />} />
-          </Routes>
-        </div>
+    <BrowserRouter>
+      <div style={{ padding: '20px' }}>
+        <nav style={{ marginBottom: '20px' }}>
+          <Link to="/" style={{ marginRight: '20px' }}>Player</Link>
+          <Link to="/admin">Admin</Link>
+        </nav>
+
+        <Routes>
+          <Route path="/" element={<Player />} />
+          <Route path="/admin" element={<Admin />} />
+        </Routes>
       </div>
-    </Router>
+    </BrowserRouter>
   );
 }
 
