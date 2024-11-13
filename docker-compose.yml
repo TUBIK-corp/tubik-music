@@ -8,6 +8,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    user: "node"
     environment:
       - VITE_API_URL=http://localhost:5000
 
