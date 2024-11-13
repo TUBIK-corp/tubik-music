@@ -1,4 +1,3 @@
-// Player.jsx
 import { useState, useEffect, useRef } from 'react';
 import { 
   PlayArrow, Pause, SkipNext, SkipPrevious, 
@@ -9,24 +8,41 @@ import {
 function Player() {
   const [tracks, setTracks] = useState([]);
   const [currentTrack, setCurrentTrack] = useState(null);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
   const [showWave, setShowWave] = useState(false);
-  const [error, setError] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [showLogin, setShowLogin] = useState(false)
-  const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [repeatMode, setRepeatMode] = useState('none'); // 'none', 'one', 'all'
+  const [isShuffleOn, setIsShuffleOn] = useState(false);
+  const [shuffledIndices, setShuffledIndices] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const audioRef = useRef(null);
+
+  useEffect(() => {
+    const savedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+    setFavorites(savedFavorites);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('favorites', JSON.stringify(favorites));
+  }, [favorites]);
 
   useEffect(() => {
     fetch('/api/tracks')
       .then(res => res.json())
       .then(data => {
         setTracks(Array.isArray(data) ? data : []);
-        if (data.length > 0) setCurrentTrack(data[0]);
+        if (data.length > 0) {
+          setCurrentTrack(data[0]);
+          initializeShuffledIndices(data.length);
+        }
       })
       .catch(err => console.error('Error fetching tracks:', err));
   }, []);
@@ -39,7 +55,7 @@ function Player() {
 
   useEffect(() => {
     if (currentTrack && audioRef.current) {
-      audioRef.current.load(); // Загружаем новый трек
+      audioRef.current.load();
       if (isPlaying) {
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
@@ -49,17 +65,28 @@ function Player() {
         }
       }
     }
-  }, [currentTrack]); // Зависимость от currentTrack
-  
-  // Измените обработчик клика на трек
+  }, [currentTrack]);
+
+  const initializeShuffledIndices = (length) => {
+    const indices = Array.from({ length }, (_, i) => i);
+    setShuffledIndices(shuffleArray([...indices]));
+  };
+
+  const shuffleArray = (array) => {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  };
+
   const handleTrackClick = (track) => {
     const isSameTrack = currentTrack?.id === track.id;
-    
     if (isSameTrack) {
-      // Если тот же трек - просто переключаем воспроизведение
       handlePlay();
     } else {
-      // Если новый трек
+      const newIndex = tracks.findIndex(t => t.id === track.id);
+      setCurrentTrackIndex(newIndex);
       setCurrentTrack(track);
       setIsPlaying(true);
     }
@@ -79,6 +106,75 @@ function Player() {
       }
       setIsPlaying(!isPlaying);
     }
+  };
+
+  const handlePrevTrack = () => {
+    if (tracks.length === 0) return;
+    
+    let newIndex;
+    if (isShuffleOn) {
+      const currentShuffleIndex = shuffledIndices.indexOf(currentTrackIndex);
+      newIndex = shuffledIndices[currentShuffleIndex === 0 ? shuffledIndices.length - 1 : currentShuffleIndex - 1];
+    } else {
+      newIndex = currentTrackIndex === 0 ? tracks.length - 1 : currentTrackIndex - 1;
+    }
+    
+    setCurrentTrackIndex(newIndex);
+    setCurrentTrack(tracks[newIndex]);
+    setIsPlaying(true);
+  };
+
+  const handleNextTrack = () => {
+    if (tracks.length === 0) return;
+    
+    let newIndex;
+    if (isShuffleOn) {
+      const currentShuffleIndex = shuffledIndices.indexOf(currentTrackIndex);
+      newIndex = shuffledIndices[currentShuffleIndex === shuffledIndices.length - 1 ? 0 : currentShuffleIndex + 1];
+    } else {
+      newIndex = currentTrackIndex === tracks.length - 1 ? 0 : currentTrackIndex + 1;
+    }
+    
+    setCurrentTrackIndex(newIndex);
+    setCurrentTrack(tracks[newIndex]);
+    setIsPlaying(true);
+  };
+
+  const handleTrackEnd = () => {
+    if (repeatMode === 'one') {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+      }
+    } else if (repeatMode === 'all' || isShuffleOn) {
+      handleNextTrack();
+    } else {
+      setIsPlaying(false);
+    }
+  };
+
+  const toggleRepeatMode = () => {
+    const modes = ['none', 'one', 'all'];
+    const currentIndex = modes.indexOf(repeatMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    setRepeatMode(modes[nextIndex]);
+  };
+
+  const toggleShuffle = () => {
+    if (!isShuffleOn) {
+      initializeShuffledIndices(tracks.length);
+    }
+    setIsShuffleOn(!isShuffleOn);
+  };
+
+  const toggleFavorite = (trackId) => {
+    setFavorites(prev => {
+      if (prev.includes(trackId)) {
+        return prev.filter(id => id !== trackId);
+      } else {
+        return [...prev, trackId];
+      }
+    });
   };
 
   const handleTimeUpdate = () => {
@@ -173,7 +269,7 @@ function Player() {
           ref={audioRef}
           src={currentTrack ? `/api/tracks/${currentTrack.id}` : ''}
           onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={handleTrackEnd}
         />
 
         <div className="player-bar-content">
@@ -188,7 +284,10 @@ function Player() {
                   <h4>{currentTrack.title}</h4>
                   <p>{currentTrack.artist}</p>
                 </div>
-                <button className="favorite-btn">
+                <button 
+                  className={`favorite-btn ${favorites.includes(currentTrack.id) ? 'active' : ''}`}
+                  onClick={() => toggleFavorite(currentTrack.id)}
+                >
                   <Favorite />
                 </button>
               </>
@@ -197,19 +296,26 @@ function Player() {
 
           <div className="player-controls">
             <div className="control-buttons">
-              <button className="control-btn">
+              <button 
+                className={`control-btn ${isShuffleOn ? 'active' : ''}`}
+                onClick={toggleShuffle}
+              >
                 <Shuffle />
               </button>
-              <button className="control-btn">
+              <button className="control-btn" onClick={handlePrevTrack}>
                 <SkipPrevious />
               </button>
               <button className="play-btn" onClick={handlePlay}>
                 {isPlaying ? <Pause /> : <PlayArrow />}
               </button>
-              <button className="control-btn">
+              <button className="control-btn" onClick={handleNextTrack}>
                 <SkipNext />
               </button>
-              <button className="control-btn">
+              <button 
+                className={`control-btn ${repeatMode !== 'none' ? 'active' : ''}`}
+                onClick={toggleRepeatMode}
+                data-tooltip={`Repeat: ${repeatMode}`}
+              >
                 <Repeat />
               </button>
             </div>
