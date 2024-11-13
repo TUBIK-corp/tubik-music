@@ -6,7 +6,7 @@ function Player() {
   const [currentTrack, setCurrentTrack] = useState(null)
 
   useEffect(() => {
-    fetch('http://localhost:5000/tracks')
+    fetch('/api/tracks')
       .then(res => res.json())
       .then(data => setTracks(data))
   }, [])
@@ -15,7 +15,7 @@ function Player() {
     <div className="player">
       <audio
         controls
-        src={currentTrack ? `http://localhost:5000/tracks/${currentTrack.id}` : ''}
+        src={currentTrack ? `/api/tracks/${currentTrack.id}` : ''}
       />
       <div className="playlist">
         {tracks.map(track => (

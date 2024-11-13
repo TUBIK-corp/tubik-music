@@ -19,7 +19,7 @@ function AdminPanel() {
     formData.append('title', title)
 
     try {
-      const response = await fetch('http://localhost:5000/upload', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       })
