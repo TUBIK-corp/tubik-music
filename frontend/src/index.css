@@ -298,6 +298,21 @@ body {
   cursor: pointer;
 }
 
+.progress-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--primary-color) 0%,
+    var(--primary-color) var(--progress-percent, 0%),
+    rgba(255, 255, 255, 0.1) var(--progress-percent, 0%)
+  );
+  height: 4px;
+  border-radius: 2px;
+}
+
+.progress-slider::-webkit-slider-thumb {
+  margin-top: -4px;
+}
+
 .progress-slider::-webkit-slider-thumb,
 .volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;

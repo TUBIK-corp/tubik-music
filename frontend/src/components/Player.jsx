@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   PlayArrow, Pause, SkipNext, SkipPrevious, 
-  VolumeUp, Favorite, Shuffle, Repeat, 
+  VolumeUp, Favorite, Shuffle, Repeat, RepeatOne,
   AccountCircle, Settings 
 } from '@mui/icons-material';
 
@@ -26,8 +26,14 @@ function Player() {
   const audioRef = useRef(null);
 
   useEffect(() => {
-    const savedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-    setFavorites(savedFavorites);
+    try {
+      const savedFavorites = localStorage.getItem('userFavorites');
+      if (savedFavorites) {
+        setFavorites(JSON.parse(savedFavorites));
+      }
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -154,10 +160,18 @@ function Player() {
   };
 
   const toggleRepeatMode = () => {
-    const modes = ['none', 'one', 'all'];
-    const currentIndex = modes.indexOf(repeatMode);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    setRepeatMode(modes[nextIndex]);
+    setRepeatMode(current => {
+      switch (current) {
+        case 'none':
+          return 'all';
+        case 'all':
+          return 'one';
+        case 'one':
+          return 'none';
+        default:
+          return 'none';
+      }
+    });
   };
 
   const toggleShuffle = () => {
@@ -169,11 +183,17 @@ function Player() {
 
   const toggleFavorite = (trackId) => {
     setFavorites(prev => {
-      if (prev.includes(trackId)) {
-        return prev.filter(id => id !== trackId);
-      } else {
-        return [...prev, trackId];
+      const newFavorites = prev.includes(trackId) 
+        ? prev.filter(id => id !== trackId)
+        : [...prev, trackId];
+      
+      try {
+        localStorage.setItem('userFavorites', JSON.stringify(newFavorites));
+      } catch (error) {
+        console.error('Error saving favorites:', error);
       }
+      
+      return newFavorites;
     });
   };
 
@@ -181,6 +201,8 @@ function Player() {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
       setDuration(audioRef.current.duration);
+      const progressPercent = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+      audioRef.current.parentElement.style.setProperty('--progress-percent', `${progressPercent}%`);
     }
   };
 
@@ -314,9 +336,8 @@ function Player() {
               <button 
                 className={`control-btn ${repeatMode !== 'none' ? 'active' : ''}`}
                 onClick={toggleRepeatMode}
-                data-tooltip={`Repeat: ${repeatMode}`}
               >
-                <Repeat />
+                {repeatMode === 'one' ? <RepeatOne /> : <Repeat />}
               </button>
             </div>
 
