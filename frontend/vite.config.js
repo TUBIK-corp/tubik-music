@@ -9,7 +9,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
         '/api': {
-            target: 'http://localhost:24003',
+            target: 'http://tubik-corp.ru:24003',
             changeOrigin: true,
             secure: false,
         }
