@@ -37,12 +37,45 @@ function Player() {
     }
   }, [currentTrack]);
 
+  useEffect(() => {
+    if (currentTrack && audioRef.current) {
+      audioRef.current.load(); // Загружаем новый трек
+      if (isPlaying) {
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.log("Autoplay prevented:", error);
+          });
+        }
+      }
+    }
+  }, [currentTrack]); // Зависимость от currentTrack
+  
+  // Измените обработчик клика на трек
+  const handleTrackClick = (track) => {
+    const isSameTrack = currentTrack?.id === track.id;
+    
+    if (isSameTrack) {
+      // Если тот же трек - просто переключаем воспроизведение
+      handlePlay();
+    } else {
+      // Если новый трек
+      setCurrentTrack(track);
+      setIsPlaying(true);
+    }
+  };
+
   const handlePlay = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.log("Playback prevented:", error);
+          });
+        }
       }
       setIsPlaying(!isPlaying);
     }
@@ -113,16 +146,10 @@ function Player() {
         <div className="tracks-container">
           {tracks.map(track => (
             <div 
-              key={track.id}
-              className={`track-card ${currentTrack?.id === track.id ? 'active' : ''}`}
-              onClick={() => {
-                setCurrentTrack(track);
-                setIsPlaying(true);
-                if (audioRef.current) {
-                  audioRef.current.play();
-                }
-              }}
-            >
+                key={track.id}
+                className={`track-card ${currentTrack?.id === track.id ? 'active' : ''}`}
+                onClick={() => handleTrackClick(track)}
+              >
               <div className="track-image">
                 <img src={track.coverUrl || 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg'} alt={track.title} />
                 {currentTrack?.id === track.id && isPlaying && (
