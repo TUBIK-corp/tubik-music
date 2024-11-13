@@ -1,11 +1,20 @@
+# frontend/Dockerfile
 FROM node:16-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install -g vite
+RUN chown -R node:node /app
+
+USER node
+
+COPY --chown=node:node package*.json ./
+
 RUN npm install
 
-COPY . .
+COPY --chown=node:node . .
+
+RUN mkdir -p node_modules/.vite && chmod 777 node_modules/.vite
+
+EXPOSE 3000
 
 CMD ["npm", "run", "dev"]
