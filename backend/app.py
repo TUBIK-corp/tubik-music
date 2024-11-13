@@ -18,15 +18,15 @@ def load_tracks():
             return json.load(f)
     return []
 
-@app.route('/tracks', methods=['GET'])
+@app.route('/api/tracks', methods=['GET'])
 def get_tracks():
     return jsonify(load_tracks())
 
-@app.route('/tracks/<track_id>', methods=['GET'])
+@app.route('/api/tracks/<track_id>', methods=['GET'])
 def get_track(track_id):
     return send_file(f'{UPLOAD_FOLDER}/{track_id}.mp3')
 
-@app.route('/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
     password_hash = hashlib.sha256(data['password'].encode()).hexdigest()
@@ -34,7 +34,7 @@ def login():
         return jsonify({'success': True})
     return jsonify({'success': False}), 401
 
-@app.route('/upload', methods=['POST'])
+@app.route('/api/upload', methods=['POST'])
 def upload_track():
     if 'file' not in request.files:
         return jsonify({'error': 'No file'}), 400
