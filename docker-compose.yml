@@ -4,18 +4,19 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
+      - "24004:24004"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     user: "node"
     environment:
-      - VITE_API_URL=http://localhost:5000
+      - SERVER_PORT=24004
+      - API_URL=http://tubik-corp.ru:24003
 
   backend:
     build: ./backend
     ports:
-      - "5000:5000"
+      - "24003:5000"
     volumes:
       - ./backend:/app
       - ./backend/data:/app/data

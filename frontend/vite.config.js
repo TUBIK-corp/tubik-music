@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 3000,
+    port: process.env.SERVER_PORT,
     proxy: {
         '/api': {
-            target: 'http://tubik-corp.ru:24003',
+            target: process.env.API_URL,
             changeOrigin: true,
             secure: false,
         }
