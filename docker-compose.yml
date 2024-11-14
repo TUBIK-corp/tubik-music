@@ -6,8 +6,8 @@ services:
     ports:
       - "24004:24004"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app:cached
+      - frontend_node_modules:/app/node_modules
     user: "node"
     environment:
       - SERVER_PORT=24004
@@ -20,3 +20,6 @@ services:
     volumes:
       - ./backend:/app
       - ./backend/data:/app/data
+      
+volumes:
+  frontend_node_modules:
