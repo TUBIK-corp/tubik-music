@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   PlayArrow, Pause, SkipNext, SkipPrevious, 
   VolumeUp, Favorite, Shuffle, Repeat, RepeatOne,
-  AccountCircle, Settings 
+  AccountCircle, Settings, Refresh 
 } from '@mui/icons-material';
 
 function Player() {
@@ -24,6 +24,7 @@ function Player() {
   const [shuffledIndices, setShuffledIndices] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const audioRef = useRef(null);
+  const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
   useEffect(() => {
     try {
@@ -40,17 +41,25 @@ function Player() {
     localStorage.setItem('favorites', JSON.stringify(favorites));
   }, [favorites]);
 
+  const fetchTracks = async () => {
+    try {
+      const response = await fetch('/api/tracks');
+      const data = await response.json();
+      setTracks(Array.isArray(data) ? data : []);
+      if (data.length > 0 && !currentTrack) {
+        setCurrentTrack(data[0]);
+        initializeShuffledIndices(data.length);
+      }
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching tracks:', err);
+      setError('Failed to load tracks');
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/tracks')
-      .then(res => res.json())
-      .then(data => {
-        setTracks(Array.isArray(data) ? data : []);
-        if (data.length > 0) {
-          setCurrentTrack(data[0]);
-          initializeShuffledIndices(data.length);
-        }
-      })
-      .catch(err => console.error('Error fetching tracks:', err));
+    fetchTracks();
   }, []);
 
   useEffect(() => {
@@ -155,7 +164,11 @@ function Player() {
     } else if (repeatMode === 'all' || isShuffleOn) {
       handleNextTrack();
     } else {
-      setIsPlaying(false);
+      if (currentTrackIndex === tracks.length - 1) {
+        setIsPlaying(false);
+      } else {
+        handleNextTrack();
+      }
     }
   };
 
@@ -207,27 +220,47 @@ function Player() {
   };
 
   const formatTime = (time) => {
+    if (!time || isNaN(time)) return '0:00';
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
+
+  const handleRefresh = () => {
+    fetchTracks();
+  };
+
+  if (loading) {
+    return <div className="loading">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="error">{error}</div>;
+  }
 
   return (
     <div className="app-container">
       <div className="player-header">
+        <button 
+          className="control-btn refresh-btn" 
+          onClick={handleRefresh}
+          title="Обновить список треков"
+        >
+          <Refresh />
+        </button>
         {!isAdmin ? (
           <button 
             className="control-btn login-btn" 
             onClick={() => setShowLogin(true)}
           >
-            Войти
+            <AccountCircle /> Войти
           </button>
         ) : (
           <button 
             className="control-btn admin-btn" 
             onClick={() => setShowAdminPanel(!showAdminPanel)}
           >
-            Добавить трек
+            <Settings /> Управление треками
           </button>
         )}
       </div>
@@ -238,8 +271,8 @@ function Player() {
             <button className="close-modal" onClick={() => setShowLogin(false)}>×</button>
             <Login 
               onLogin={() => {
-                setIsAdmin(true)
-                setShowLogin(false)
+                setIsAdmin(true);
+                setShowLogin(false);
               }} 
             />
           </div>
@@ -248,28 +281,31 @@ function Player() {
 
       {showAdminPanel && (
         <div className="modal-overlay" onClick={() => setShowAdminPanel(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content admin-modal" onClick={e => e.stopPropagation()}>
             <button className="close-modal" onClick={() => setShowAdminPanel(false)}>×</button>
-            <AdminPanel />
+            <AdminPanel onUpdate={fetchTracks} />
           </div>
         </div>
       )}
 
-
-
-      {/* Main Content */}
-      <main className="main-content">
+<main className="main-content">
         {showWave && <div className="wave-animation" />}
         
         <div className="tracks-container">
           {tracks.map(track => (
             <div 
-                key={track.id}
-                className={`track-card ${currentTrack?.id === track.id ? 'active' : ''}`}
-                onClick={() => handleTrackClick(track)}
-              >
+              key={track.id}
+              className={`track-card ${currentTrack?.id === track.id ? 'active' : ''}`}
+              onClick={() => handleTrackClick(track)}
+            >
               <div className="track-image">
-                <img src={track.coverUrl || 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg'} alt={track.title} />
+                <img 
+                  src={track.imageUrl || DEFAULT_COVER} 
+                  alt={track.title}
+                  onError={(e) => {
+                    e.target.src = DEFAULT_COVER;
+                  }}
+                />
                 {currentTrack?.id === track.id && isPlaying && (
                   <div className="playing-animation">
                     <span></span><span></span><span></span><span></span>
@@ -280,12 +316,20 @@ function Player() {
                 <h3>{track.title}</h3>
                 <p>{track.artist}</p>
               </div>
+              <button 
+                className={`card-favorite-btn ${favorites.includes(track.id) ? 'active' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(track.id);
+                }}
+              >
+                <Favorite />
+              </button>
             </div>
           ))}
         </div>
       </main>
 
-      {/* Player Bar */}
       <div className="player-bar">
         <audio
           ref={audioRef}
@@ -299,18 +343,21 @@ function Player() {
             {currentTrack && (
               <>
                 <img 
-                  src={currentTrack.coverUrl || 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg'} 
+                  src={currentTrack.imageUrl || DEFAULT_COVER}
                   alt={currentTrack.title}
+                  onError={(e) => {
+                    e.target.src = DEFAULT_COVER;
+                  }}
                 />
                 <div className="track-info">
                   <h4>{currentTrack.title}</h4>
                   <p>{currentTrack.artist}</p>
                 </div>
                 <button 
-                  className={`favorite-btn ${favorites.includes(currentTrack.id) ? 'active' : ''}`}
+                  className={`player-favorite-btn ${favorites.includes(currentTrack.id) ? 'active' : ''}`}
                   onClick={() => toggleFavorite(currentTrack.id)}
                 >
-                  <Favorite />
+                  <Favorite className="player-favorite-icon" />
                 </button>
               </>
             )}
@@ -357,7 +404,7 @@ function Player() {
                   }
                 }}
               />
-              <span>{formatTime(duration || 0)}</span>
+              <span>{formatTime(duration)}</span>
             </div>
           </div>
 
