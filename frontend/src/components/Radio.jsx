@@ -13,7 +13,9 @@ function Radio() {
   const audioBufferQueueRef = useRef([]);
   const schedulerIntervalRef = useRef(null);
   const SCHEDULE_AHEAD_TIME = 1; // Планирование на 1 секунду вперед
-  const SCHEDULER_INTERVAL = 100; // Интервал планировщика 100ms
+  const SCHEDULER_INTERVAL = 100; // Интервал планировщика 100ms 
+  const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
+
 
   useEffect(() => {
     try {
@@ -93,7 +95,7 @@ function Radio() {
         arrayBuffer.byteLength / (data.channels * 2),
         data.sample_rate
       );
-      
+
       console.log('Received chunk:', {
         sampleRate: data.sample_rate,
         channels: data.channels,
@@ -226,7 +228,7 @@ function Radio() {
 
         <div className="radio-image-container">
           <img 
-            src={currentTrack?.imageUrl || "/default-radio.jpg"} 
+            src={currentTrack?.imageUrl || DEFAULT_COVER} 
             alt="Radio" 
             className={`radio-image ${isConnected ? 'spinning' : ''}`} 
           />

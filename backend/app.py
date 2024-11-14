@@ -69,23 +69,18 @@ class AudioPlayer:
         start_ms = int(self.position * 1000)
         end_ms = start_ms + chunk_length
 
-        # Проверяем, что мы действительно достигли конца трека
+        # Проверяем, достигли ли мы конца трека
         if start_ms >= len(self.current_segment):
             return None
 
+        # Получаем следующий чанк
         chunk = self.current_segment[start_ms:end_ms]
 
-        # Изменяем проверку на окончание трека
-        # Возвращаем None только если остаток трека меньше 10% от длины чанка
-        if len(chunk) < chunk_length * 0.1:
+        # Проверяем, близки ли мы к концу трека
+        if start_ms > len(self.current_segment) - (chunk_length * 2):
             return None
 
         self.position += self.chunk_duration
-
-        # Если чанк короче ожидаемой длины, дополняем его тишиной
-        if len(chunk) < chunk_length:
-            chunk = chunk + AudioSegment.silent(duration=chunk_length - len(chunk))
-
         return chunk
     
 
@@ -136,19 +131,22 @@ class RadioStream:
 
     def buffer_audio(self):
         while self.is_running:
-            if self.fill_buffer():
-                time.sleep(self.player.chunk_duration)
-            else:
-                # Добавляем проверку реального окончания трека
-                if self.player.position >= len(self.player.current_segment) / 1000:
-                    self.player.reset()
-                    track_path, track_info = self.get_random_track()
-                    if track_path and self.player.load_track(track_path, track_info):
-                        self.notify_track_change()
+            try:
+                if self.player.buffer.qsize() < self.player.buffer.maxsize:
+                    chunk = self.player.get_next_chunk()
+                    if chunk is None:
+                        self.player.reset()
+                        track_path, track_info = self.get_random_track()
+                        if track_path and self.player.load_track(track_path, track_info):
+                            self.notify_track_change()
+                        else:
+                            time.sleep(1)
                     else:
-                        time.sleep(1)
-                else:
-                    time.sleep(self.player.chunk_duration)
+                        self.player.buffer.put(chunk)
+                time.sleep(self.player.chunk_duration / 2)
+            except Exception as e:
+                print(f"Error in buffer_audio: {e}")
+                time.sleep(1)
 
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
