@@ -42,7 +42,8 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 0.1  # 100ms chunks
+        self.chunk_duration = 0.1  # Уменьшаем до 100ms для более плавного воспроизведения
+        self.buffer = queue.Queue(maxsize=10)
         self.sample_rate = 44100
         self.channels = 2
 
@@ -77,6 +78,7 @@ class AudioPlayer:
 
         self.position += self.chunk_duration
         return chunk
+    
 
     def reset(self):
         """Сбрасывает состояние плеера"""
@@ -91,6 +93,15 @@ class RadioStream:
         self.current_thread = None
         self.player = AudioPlayer()
         self.is_running = False
+        self.buffer_thread = None
+
+    def fill_buffer(self):
+        while not self.player.buffer.full():
+            chunk = self.player.get_next_chunk()
+            if chunk is None:
+                return False
+            self.player.buffer.put(chunk)
+        return True
 
     def get_random_track(self):
         """Выбирает случайный трек из доступных"""
@@ -114,6 +125,18 @@ class RadioStream:
             
         return track_path, track
 
+    def buffer_audio(self):
+        while self.is_running:
+            if self.fill_buffer():
+                time.sleep(self.player.chunk_duration)
+            else:
+                self.player.reset()
+                track_path, track_info = self.get_random_track()
+                if track_path and self.player.load_track(track_path, track_info):
+                    self.notify_track_change()
+                else:
+                    time.sleep(1)
+
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
         if self.player.current_track_info:
@@ -125,32 +148,38 @@ class RadioStream:
 
     def stream_audio(self):
         self.is_running = True
+        self.buffer_thread = threading.Thread(target=self.buffer_audio)
+        self.buffer_thread.start()
+
         while self.is_running and self.clients:
-            if not self.player.current_segment:
-                track_path, track_info = self.get_random_track()
-                if not track_path or not self.player.load_track(track_path, track_info):
-                    time.sleep(1)
-                    continue
-                self.notify_track_change()
-    
-            chunk = self.player.get_next_chunk()
-            if chunk is None:
-                self.player.reset()
-                continue
-            
             try:
+                chunk = self.player.buffer.get(timeout=1)
                 audio_data = {
                     'data': chunk.raw_data.hex(),
-                    'sample_rate': self.player.sample_rate,  # Используйте актуальную частоту дискретизации
-                    'channels': self.player.channels,  # Используйте актуальное количество каналов
+                    'sample_rate': self.player.sample_rate,
+                    'channels': self.player.channels,
                     'duration': self.player.chunk_duration
                 }
                 socketio.emit('audio_chunk', audio_data)
-                time.sleep(self.player.chunk_duration)
+                time.sleep(self.player.chunk_duration * 0.9)
+            except queue.Empty:
+                continue
             except Exception as e:
                 print(f"Error sending audio chunk: {e}")
                 continue
 
+    def cleanup(self):
+        self.is_running = False
+        if self.current_thread:
+            self.current_thread.join()
+        if self.buffer_thread:
+            self.buffer_thread.join()
+        self.player.reset()
+
+
+def cleanup_resources():
+    radio.cleanup()
+    
 def load_tracks():
     """Загружает список треков из файла"""
     if os.path.exists(TRACKS_FILE):
