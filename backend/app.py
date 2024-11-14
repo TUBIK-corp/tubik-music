@@ -43,7 +43,7 @@ class AudioPlayer:
         self.is_playing = False
         self.current_track_info = None
         self.chunk_duration = 0.1  # Уменьшаем до 100ms для более плавного воспроизведения
-        self.buffer = queue.Queue(maxsize=10)
+        self.buffer = queue.Queue(maxsize=20)
         self.sample_rate = 44100
         self.channels = 2
         self.track_duration = 0  
@@ -145,15 +145,15 @@ class RadioStream:
                         if track_path and self.player.load_track(track_path, track_info):
                             self.notify_track_change()
                         else:
-                            time.sleep(1)
+                            time.sleep(0.01)
                     else:
                         chunk = self.player.get_next_chunk()
                         if chunk is not None:
-                            self.player.buffer.put(chunk)
-                time.sleep(self.player.chunk_duration / 2)
+                            self.player.buffer.put(chunk, timeout=0.1)
+                time.sleep(0.001)  # Уменьшаем задержку
             except Exception as e:
                 print(f"Error in buffer_audio: {e}")
-                time.sleep(1)
+                time.sleep(0.01)
 
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
@@ -169,21 +169,40 @@ class RadioStream:
         self.buffer_thread = threading.Thread(target=self.buffer_audio)
         self.buffer_thread.start()
 
+        last_send_time = time.time()
+        chunk_interval = self.player.chunk_duration
+
         while self.is_running and self.clients:
             try:
-                chunk = self.player.buffer.get(timeout=1)
-                audio_data = {
-                    'data': chunk.raw_data.hex(),
-                    'sample_rate': self.player.sample_rate,
-                    'channels': self.player.channels,
-                    'duration': self.player.chunk_duration
-                }
-                socketio.emit('audio_chunk', audio_data)
-                time.sleep(self.player.chunk_duration * 0.9)
+                current_time = time.time()
+                if current_time - last_send_time >= chunk_interval:
+                    chunk = self.player.buffer.get(timeout=0.1)  # уменьшаем timeout
+                    audio_data = {
+                        'data': chunk.raw_data.hex(),
+                        'sample_rate': self.player.sample_rate,
+                        'channels': self.player.channels,
+                        'duration': self.player.chunk_duration
+                    }
+                    socketio.emit('audio_chunk', audio_data)
+
+                    # Корректируем время следующей отправки
+                    last_send_time = current_time
+
+                    # Точная задержка для следующего чанка
+                    sleep_time = chunk_interval - (time.time() - current_time)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                else:
+                    # Короткая задержка для проверки времени
+                    time.sleep(0.001)
+
             except queue.Empty:
+                print("Buffer underrun")
+                time.sleep(0.01)
                 continue
             except Exception as e:
                 print(f"Error sending audio chunk: {e}")
+                time.sleep(0.01)
                 continue
 
     def cleanup(self):
