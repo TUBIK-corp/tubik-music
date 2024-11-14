@@ -61,6 +61,7 @@ class AudioPlayer:
         
     def get_next_chunk(self):
         if not self.current_segment:
+            print("No current segment loaded")
             return None
 
         chunk_length = int(self.chunk_duration * 1000)
@@ -68,10 +69,12 @@ class AudioPlayer:
         end_ms = start_ms + chunk_length
 
         if start_ms >= len(self.current_segment):
+            print("Reached end of current segment")
             return None
 
         chunk = self.current_segment[start_ms:end_ms]
         if len(chunk) < chunk_length:
+            print(f"Chunk too short: {len(chunk)}ms < {chunk_length}ms")
             return None
 
         self.position += self.chunk_duration
@@ -93,6 +96,7 @@ class RadioStream:
         self.send_interval = 0.5  # 2 пакета в секунду
         self.last_send_time = 0
         self.send_queue = queue.Queue()
+        self.chunk_interval = 10
 
     def fill_buffer(self):
         while not self.player.buffer.full():
@@ -136,39 +140,49 @@ class RadioStream:
 
     def stream_audio(self):
         self.is_running = True
+        next_send_time = time.time()
+
         while self.is_running and self.clients:
-            chunk = self.player.get_next_chunk()
-            if chunk is None:
-                print("End of track or no audio data available")
-                self.player.reset()
-                track_path, track_info = self.get_random_track()
-                if track_path and self.player.load_track(track_path, track_info):
-                    self.notify_track_change()
-                    print(f"Loaded new track: {track_info['title']}")
-                else:
-                    print("Failed to load new track, waiting before retry")
-                    time.sleep(1)
-                continue
-            
-            try:
-                audio_data = {
-                    'data': chunk.raw_data.hex(),
-                    'sample_rate': self.player.sample_rate,
-                    'channels': self.player.channels,
-                    'duration': self.player.chunk_duration
-                }
-                socketio.emit('audio_chunk', audio_data)
-                print(f"Sent 10-second audio chunk. Track: {self.player.current_track_info['title']}")
-            except AttributeError as e:
-                print(f"Error processing audio chunk: {e}")
-                self.player.reset()
-                continue
-            except Exception as e:
-                print(f"Unexpected error: {e}")
-                continue
-            
-            time.sleep(self.player.chunk_duration)
-    
+            current_time = time.time()
+
+            if current_time >= next_send_time:
+                chunk = self.player.get_next_chunk()
+                if chunk is None:
+                    print("End of track or no audio data available")
+                    self.player.reset()
+                    track_path, track_info = self.get_random_track()
+                    if track_path and self.player.load_track(track_path, track_info):
+                        self.notify_track_change()
+                        print(f"Loaded new track: {track_info['title']}")
+                    else:
+                        print("Failed to load new track, waiting before retry")
+                        time.sleep(1)
+                    next_send_time = time.time() + self.chunk_interval
+                    continue
+
+                try:
+                    audio_data = {
+                        'data': chunk.raw_data.hex(),
+                        'sample_rate': self.player.sample_rate,
+                        'channels': self.player.channels,
+                        'duration': self.player.chunk_duration
+                    }
+                    socketio.emit('audio_chunk', audio_data)
+                    print(f"Sent 10-second audio chunk. Track: {self.player.current_track_info['title']}")
+                    next_send_time = current_time + self.chunk_interval
+                except AttributeError as e:
+                    print(f"Error processing audio chunk: {e}")
+                    self.player.reset()
+                    next_send_time = current_time + self.chunk_interval
+                    continue
+                except Exception as e:
+                    print(f"Unexpected error: {e}")
+                    next_send_time = current_time + self.chunk_interval
+                    continue
+            else:
+                # Ждем небольшой промежуток времени перед следующей проверкой
+                time.sleep(0.1)
+
         print("Streaming stopped")
 
     def cleanup(self):
