@@ -42,7 +42,7 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 10  # 10 секунд аудио
+        self.chunk_duration = 1  # 10 секунд аудио
         self.sample_rate = 44100
         self.channels = 2
 
@@ -96,7 +96,7 @@ class RadioStream:
         self.send_interval = 0.5  # 2 пакета в секунду
         self.last_send_time = 0
         self.send_queue = queue.Queue()
-        self.chunk_interval = 10
+        self.chunk_interval = 1
 
     def fill_buffer(self):
         while not self.player.buffer.full():
@@ -168,22 +168,26 @@ class RadioStream:
                         'duration': self.player.chunk_duration
                     }
                     socketio.emit('audio_chunk', audio_data)
-                    print(f"Sent 10-second audio chunk. Track: {self.player.current_track_info['title']}")
-                    next_send_time = current_time + self.chunk_interval
-                except AttributeError as e:
-                    print(f"Error processing audio chunk: {e}")
-                    self.player.reset()
-                    next_send_time = current_time + self.chunk_interval
-                    continue
+                    print(f"Sent 1-second audio chunk. Track: {self.player.current_track_info['title']}")
+                    next_send_time += self.chunk_interval
                 except Exception as e:
-                    print(f"Unexpected error: {e}")
-                    next_send_time = current_time + self.chunk_interval
+                    print(f"Error sending audio chunk: {e}")
+                    next_send_time = time.time() + self.chunk_interval
                     continue
             else:
-                # Ждем небольшой промежуток времени перед следующей проверкой
-                time.sleep(0.1)
+                time.sleep(0.01)  # Короткая пауза для экономии ресурсов
 
         print("Streaming stopped")
+
+
+    def get_initial_chunks(self, count=5):
+        chunks = []
+        for _ in range(count):
+            chunk = self.player.get_next_chunk()
+            if chunk is None:
+                break
+            chunks.append(chunk)
+        return chunks
 
     def cleanup(self):
         self.is_running = False
@@ -286,6 +290,21 @@ def handle_connect():
     if len(radio.clients) == 1:
         radio.current_thread = threading.Thread(target=radio.stream_audio)
         radio.current_thread.start()
+    
+    # Отправка начальных 5 секунд аудио
+    initial_chunks = radio.get_initial_chunks(5)
+    combined_chunk = AudioSegment.empty()
+    for chunk in initial_chunks:
+        combined_chunk += chunk
+
+    if len(combined_chunk) > 0:
+        audio_data = {
+            'data': combined_chunk.raw_data.hex(),
+            'sample_rate': radio.player.sample_rate,
+            'channels': radio.player.channels,
+            'duration': len(combined_chunk) / 1000  # длительность в секундах
+        }
+        emit('initial_audio_chunk', audio_data)
     
     radio.notify_listeners_count()
     if radio.player.current_track_info:
