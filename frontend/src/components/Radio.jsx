@@ -17,7 +17,7 @@ function Radio() {
 
   useEffect(() => {
     try {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
       gainNodeRef.current = audioContextRef.current.createGain();
       gainNodeRef.current.connect(audioContextRef.current.destination);
       nextPlayTimeRef.current = audioContextRef.current.currentTime;
@@ -78,16 +78,29 @@ function Radio() {
     try {
       if (!data || !data.data) return;
   
-      const arrayBuffer = new Uint8Array(
-        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-      ).buffer;
+      // Декодируем base64 в ArrayBuffer
+      const binaryString = atob(data.data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const arrayBuffer = bytes.buffer;
   
-      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+      // Создаем AudioBuffer
+      const audioBuffer = audioContextRef.current.createBuffer(
+        data.channels,
+        arrayBuffer.byteLength / (data.channels * 2),
+        data.sample_rate
+      );
   
-      // Проверяем, соответствует ли частота дискретизации
-      if (audioBuffer.sampleRate !== audioContextRef.current.sampleRate) {
-        console.warn(`Sample rate mismatch: got ${audioBuffer.sampleRate}, expected ${audioContextRef.current.sampleRate}`);
-        // Здесь можно добавить код для ресемплирования, если это необходимо
+      // Заполняем AudioBuffer данными
+      for (let channel = 0; channel < data.channels; channel++) {
+        const channelData = audioBuffer.getChannelData(channel);
+        const dataView = new DataView(arrayBuffer);
+        for (let i = 0; i < channelData.length; i++) {
+          channelData[i] = dataView.getInt16(i * 2 + channel * 2, true) / 32768.0;
+        }
       }
   
       audioBufferQueueRef.current.push(audioBuffer);

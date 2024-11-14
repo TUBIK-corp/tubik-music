@@ -10,6 +10,7 @@ from pydub.utils import make_chunks
 from werkzeug.utils import secure_filename
 import time
 import queue
+import base64
 
 app = Flask(__name__)
 socketio = SocketIO(
@@ -138,15 +139,15 @@ class RadioStream:
                     time.sleep(1)
                     continue
                 self.notify_track_change()
-
+    
             chunk = self.player.get_next_chunk()
             if chunk is None:
                 self.player.reset()
                 continue
-
+            
             try:
                 audio_data = {
-                    'data': chunk.raw_data.hex(),
+                    'data': base64.b64encode(chunk.raw_data).decode('utf-8'),
                     'sample_rate': self.player.sample_rate,
                     'channels': self.player.channels,
                     'duration': self.player.chunk_duration
