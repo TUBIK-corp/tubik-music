@@ -12,8 +12,8 @@ function Radio() {
   const nextPlayTimeRef = useRef(0);
   const audioBufferQueueRef = useRef([]);
   const schedulerIntervalRef = useRef(null);
-  const SCHEDULE_AHEAD_TIME = 0.5; // Время планирования вперед (в секундах)
-  const SCHEDULER_INTERVAL = 100; 
+  const SCHEDULE_AHEAD_TIME = 1; // Планирование на 1 секунду вперед
+  const SCHEDULER_INTERVAL = 100; // Интервал планировщика 100ms
 
   useEffect(() => {
     try {
@@ -60,13 +60,17 @@ function Radio() {
   };
 
   const audioScheduler = () => {
+    const currentTime = audioContextRef.current.currentTime;
     while (
       audioBufferQueueRef.current.length > 0 &&
-      nextPlayTimeRef.current < audioContextRef.current.currentTime + SCHEDULE_AHEAD_TIME
+      nextPlayTimeRef.current < currentTime + SCHEDULE_AHEAD_TIME
     ) {
       const nextBuffer = audioBufferQueueRef.current.shift();
-      const duration = scheduleAudioChunk(nextBuffer, nextPlayTimeRef.current);
-      nextPlayTimeRef.current += duration;
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = nextBuffer;
+      source.connect(gainNodeRef.current);
+      source.start(nextPlayTimeRef.current);
+      nextPlayTimeRef.current += nextBuffer.duration;
     }
   };
 
@@ -74,10 +78,11 @@ function Radio() {
     try {
       if (!data || !data.data) return;
   
-      const arrayBuffer = data.data;
+      const arrayBuffer = new Uint8Array(
+        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+      ).buffer;
   
       const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-  
       audioBufferQueueRef.current.push(audioBuffer);
   
     } catch (err) {

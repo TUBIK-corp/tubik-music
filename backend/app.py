@@ -145,13 +145,13 @@ class RadioStream:
             
             try:
                 audio_data = {
-                    'data': chunk.raw_data,
+                    'data': chunk.raw_data.hex(),
                     'sample_rate': self.player.sample_rate,
                     'channels': self.player.channels,
                     'duration': self.player.chunk_duration
                 }
-                socketio.emit('audio_chunk', audio_data, binary=True)
-                time.sleep(self.player.chunk_duration * 0.9)  # Небольшая задержка для синхронизации
+                socketio.emit('audio_chunk', audio_data)
+                time.sleep(self.player.chunk_duration * 0.9)
             except Exception as e:
                 print(f"Error sending audio chunk: {e}")
                 continue
