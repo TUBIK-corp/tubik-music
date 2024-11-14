@@ -139,23 +139,37 @@ class RadioStream:
         while self.is_running and self.clients:
             chunk = self.player.get_next_chunk()
             if chunk is None:
+                print("End of track or no audio data available")
                 self.player.reset()
                 track_path, track_info = self.get_random_track()
                 if track_path and self.player.load_track(track_path, track_info):
                     self.notify_track_change()
+                    print(f"Loaded new track: {track_info['title']}")
                 else:
+                    print("Failed to load new track, waiting before retry")
                     time.sleep(1)
-                    continue
-
-            audio_data = {
-                'data': chunk.raw_data.hex(),
-                'sample_rate': self.player.sample_rate,
-                'channels': self.player.channels,
-                'duration': self.player.chunk_duration
-            }
-            socketio.emit('audio_chunk', audio_data)
-            print(f"Sent 10-second audio chunk. Track: {self.player.current_track_info['title']}")
+                continue
+            
+            try:
+                audio_data = {
+                    'data': chunk.raw_data.hex(),
+                    'sample_rate': self.player.sample_rate,
+                    'channels': self.player.channels,
+                    'duration': self.player.chunk_duration
+                }
+                socketio.emit('audio_chunk', audio_data)
+                print(f"Sent 10-second audio chunk. Track: {self.player.current_track_info['title']}")
+            except AttributeError as e:
+                print(f"Error processing audio chunk: {e}")
+                self.player.reset()
+                continue
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                continue
+            
             time.sleep(self.player.chunk_duration)
+    
+        print("Streaming stopped")
 
     def cleanup(self):
         self.is_running = False
