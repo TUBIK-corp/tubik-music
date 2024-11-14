@@ -161,14 +161,10 @@ function Player() {
         audioRef.current.currentTime = 0;
         audioRef.current.play();
       }
-    } else if (repeatMode === 'all' || isShuffleOn) {
+    } else if (repeatMode === 'all') {
       handleNextTrack();
     } else {
-      if (currentTrackIndex === tracks.length - 1) {
-        setIsPlaying(false);
-      } else {
-        handleNextTrack();
-      }
+      setIsPlaying(false);
     }
   };
 
