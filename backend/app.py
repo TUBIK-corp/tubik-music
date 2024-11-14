@@ -46,20 +46,26 @@ class AudioPlayer:
         self.buffer = queue.Queue(maxsize=10)
         self.sample_rate = 44100
         self.channels = 2
+        self.track_duration = 0  
 
     def load_track(self, track_path, track_info):
         try:
             audio = AudioSegment.from_file(track_path)
-            # Используйте оригинальную частоту дискретизации файла
             self.sample_rate = audio.frame_rate
             self.channels = audio.channels
             self.current_segment = audio
             self.position = 0
             self.current_track_info = track_info
+            self.track_duration = len(audio) / 1000.0  # длительность в секундах
             return True
         except Exception as e:
             print(f"Error loading track: {e}")
             return False
+        
+    def is_track_finished(self):
+        if not self.current_segment:
+            return True
+        return self.position >= (self.track_duration - 0.5)
         
     def get_next_chunk(self):
         if not self.current_segment:
@@ -133,8 +139,7 @@ class RadioStream:
         while self.is_running:
             try:
                 if self.player.buffer.qsize() < self.player.buffer.maxsize:
-                    chunk = self.player.get_next_chunk()
-                    if chunk is None:
+                    if self.player.is_track_finished():
                         self.player.reset()
                         track_path, track_info = self.get_random_track()
                         if track_path and self.player.load_track(track_path, track_info):
@@ -142,7 +147,9 @@ class RadioStream:
                         else:
                             time.sleep(1)
                     else:
-                        self.player.buffer.put(chunk)
+                        chunk = self.player.get_next_chunk()
+                        if chunk is not None:
+                            self.player.buffer.put(chunk)
                 time.sleep(self.player.chunk_duration / 2)
             except Exception as e:
                 print(f"Error in buffer_audio: {e}")
