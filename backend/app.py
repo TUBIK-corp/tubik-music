@@ -42,9 +42,9 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 0.05 
+        self.chunk_duration = 0.02  # Уменьшаем до 20ms для более частой отправки
+        self.buffer = queue.Queue(maxsize=50)  # Увеличиваем размер буфера для более плавной работы
         self.crossfade_duration = 3000  
-        self.buffer = queue.Queue(maxsize=5)
         self.sample_rate = 44100
         self.channels = 2
 
@@ -147,21 +147,14 @@ class RadioStream:
 
     def buffer_audio(self):
         while self.is_running:
-            if self.player.buffer.qsize() < 3:  # Поддерживаем минимальный буфер
+            if self.player.buffer.qsize() < 40:  # Поддерживаем буфер заполненным
                 if not self.fill_buffer():
                     track_path, track_info = self.get_random_track()
-                    if track_path:
-                        next_segment = AudioSegment.from_file(track_path)
-                        if self.player.current_segment:
-                            next_segment = self.player.crossfade_tracks(
-                                self.player.current_segment, 
-                                next_segment
-                            )
-                        if self.player.load_track(track_path, track_info):
-                            self.notify_track_change()
+                    if track_path and self.player.load_track(track_path, track_info):
+                        self.notify_track_change()
                     else:
-                        time.sleep(0.1)
-            time.sleep(self.player.chunk_duration / 2)
+                        time.sleep(0.01)  # Уменьшаем время ожидания
+            time.sleep(0.01)  # Уменьшаем время между проверками
 
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
@@ -179,7 +172,7 @@ class RadioStream:
 
         while self.is_running and self.clients:
             try:
-                chunk = self.player.buffer.get(timeout=0.5)
+                chunk = self.player.buffer.get(timeout=0.1)  # Уменьшаем timeout
                 audio_data = {
                     'data': chunk.raw_data.hex(),
                     'sample_rate': self.player.sample_rate,
@@ -187,7 +180,7 @@ class RadioStream:
                     'duration': self.player.chunk_duration
                 }
                 socketio.emit('audio_chunk', audio_data)
-                time.sleep(self.player.chunk_duration * 0.8)  # Немного уменьшаем задержку
+                time.sleep(self.player.chunk_duration * 0.95)  # Небольшая пауза между отправками
             except queue.Empty:
                 continue
             except Exception as e:
