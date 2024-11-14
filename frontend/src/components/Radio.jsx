@@ -8,12 +8,21 @@ function Radio() {
   const [listeners, setListeners] = useState(0);
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
 
   useEffect(() => {
-    // Создаем AudioContext при монтировании компонента
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    // Инициализация Web Audio API
+    try {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.connect(audioContextRef.current.destination);
+    } catch (err) {
+      console.error('Error initializing Audio Context:', err);
+      setError('Ошибка инициализации аудио');
+    }
 
-    // Получаем информацию о текущем треке при загрузке
     fetchCurrentTrack();
 
     return () => {
@@ -36,56 +45,78 @@ function Radio() {
     }
   };
 
-  const connectToRadio = () => {
+  const processAudioChunk = async (data) => {
+    try {
+      if (!data || !data.data) return;
+
+      const arrayBuffer = new Uint8Array(
+        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+      ).buffer;
+
+      const audioBuffer = audioContextRef.current.createBuffer(
+        data.channels,
+        arrayBuffer.byteLength / (data.channels * 2), // 16-bit audio
+        data.sample_rate
+      );
+
+      // Заполняем буфер данными
+      for (let channel = 0; channel < data.channels; channel++) {
+        const channelData = audioBuffer.getChannelData(channel);
+        const view = new Int16Array(arrayBuffer);
+        for (let i = 0; i < view.length; i++) {
+          channelData[i] = view[i] / 32768.0; // нормализация 16-bit PCM
+        }
+      }
+
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(gainNodeRef.current);
+      source.start();
+
+    } catch (err) {
+      console.error('Error processing audio chunk:', err);
+    }
+  };
+
+  const connectToRadio = async () => {
     try {
       if (!isConnected) {
-        // Инициализация WebSocket соединения
+        // Возобновляем AudioContext если он был приостановлен
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
+
         socketRef.current = io('https://music.tubik-corp.ru', {
           path: '/socket.io/',
-          transports: ['websocket', 'polling'], // Добавляем polling как fallback
+          transports: ['websocket', 'polling'],
           reconnection: true,
           reconnectionAttempts: 5,
           reconnectionDelay: 1000,
         });
-      
 
         socketRef.current.on('connect', () => {
           setIsConnected(true);
           setError(null);
+          isPlayingRef.current = true;
         });
 
         socketRef.current.on('disconnect', () => {
           setIsConnected(false);
           setCurrentTrack(null);
+          isPlayingRef.current = false;
+          audioQueueRef.current = [];
         });
 
         socketRef.current.on('track_change', (trackInfo) => {
           setCurrentTrack(trackInfo);
+          audioQueueRef.current = []; // Очищаем очередь при смене трека
         });
 
         socketRef.current.on('listeners_update', (count) => {
           setListeners(count);
         });
 
-        socketRef.current.on('audio_chunk', (data) => {
-          try {
-            const arrayBuffer = new Uint8Array(data.data.match(/.{1,2}/g)
-              .map(byte => parseInt(byte, 16))).buffer;
-
-            audioContextRef.current.decodeAudioData(arrayBuffer)
-              .then(decodedData => {
-                const source = audioContextRef.current.createBufferSource();
-                source.buffer = decodedData;
-                source.connect(audioContextRef.current.destination);
-                source.start(0);
-              })
-              .catch(err => {
-                console.error('Error decoding audio data:', err);
-              });
-          } catch (err) {
-            console.error('Error processing audio chunk:', err);
-          }
-        });
+        socketRef.current.on('audio_chunk', processAudioChunk);
 
         socketRef.current.on('error', (error) => {
           setError('Ошибка подключения к радио');
@@ -107,8 +138,32 @@ function Radio() {
       socketRef.current.disconnect();
       socketRef.current = null;
     }
+
+    isPlayingRef.current = false;
+    audioQueueRef.current = [];
     setIsConnected(false);
   };
+
+  // Добавляем обработчик для автоматического возобновления AudioContext
+  useEffect(() => {
+    const handleUserInteraction = async () => {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        try {
+          await audioContextRef.current.resume();
+        } catch (error) {
+          console.error('Error resuming AudioContext:', error);
+        }
+      }
+    };
+
+    window.addEventListener('click', handleUserInteraction);
+    window.addEventListener('touchstart', handleUserInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+    };
+  }, []);
 
   return (
     <div className="radio-container">
