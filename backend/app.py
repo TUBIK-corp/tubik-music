@@ -94,8 +94,9 @@ class RadioStream:
         self.player = AudioPlayer()
         self.is_running = False
         self.buffer_thread = None
-        self.send_interval = 0.5  # Интервал отправки пакетов (2 пакета в секунду)
+        self.send_interval = 0.5  # 2 пакета в секунду
         self.last_send_time = 0
+        self.send_queue = queue.Queue()
 
     def fill_buffer(self):
         while not self.player.buffer.full():
@@ -127,22 +128,6 @@ class RadioStream:
             
         return track_path, track
 
-    def buffer_audio(self):
-        while self.is_running:
-            if self.player.buffer.qsize() < self.player.buffer.maxsize:
-                chunk = self.player.get_next_chunk()
-                if chunk is None:
-                    self.player.reset()
-                    time.sleep(1)  # Пауза перед новой песней
-                    track_path, track_info = self.get_random_track()
-                    if track_path and self.player.load_track(track_path, track_info):
-                        self.notify_track_change()
-                    else:
-                        time.sleep(1)
-                else:
-                    self.player.buffer.put(chunk)
-            else:
-                time.sleep(0.1)  # Небольшая пауза, если буфер полон
 
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
@@ -157,26 +142,52 @@ class RadioStream:
         self.is_running = True
         self.buffer_thread = threading.Thread(target=self.buffer_audio)
         self.buffer_thread.start()
+        self.send_thread = threading.Thread(target=self.send_audio)
+        self.send_thread.start()
 
-        while self.is_running and self.clients:
+    def buffer_audio(self):
+        while self.is_running:
+            if self.player.buffer.qsize() < self.player.buffer.maxsize:
+                chunk = self.player.get_next_chunk()
+                if chunk is None:
+                    print("End of track reached, loading next...")
+                    self.player.reset()
+                    time.sleep(1)  # Пауза перед новой песней
+                    track_path, track_info = self.get_random_track()
+                    if track_path and self.player.load_track(track_path, track_info):
+                        self.notify_track_change()
+                    else:
+                        print("Failed to load next track")
+                        time.sleep(1)
+                else:
+                    self.player.buffer.put(chunk)
+                    self.send_queue.put(chunk)
+                    print(f"Buffered chunk. Buffer size: {self.player.buffer.qsize()}")
+            else:
+                time.sleep(0.1)
+
+    def send_audio(self):
+        while self.is_running:
             current_time = time.time()
             if current_time - self.last_send_time >= self.send_interval:
                 try:
-                    chunk = self.player.buffer.get(block=False)
+                    chunk = self.send_queue.get(timeout=1)
                     audio_data = {
                         'data': chunk.raw_data.hex(),
                         'sample_rate': self.player.sample_rate,
                         'channels': self.player.channels,
                         'duration': self.player.chunk_duration
                     }
+                    start_time = time.time()
                     socketio.emit('audio_chunk', audio_data)
+                    end_time = time.time()
+                    print(f"Sent chunk. Emit time: {end_time - start_time:.4f}s")
                     self.last_send_time = current_time
                 except queue.Empty:
-                    pass
+                    print("No chunks available to send")
                 except Exception as e:
                     print(f"Error sending audio chunk: {e}")
             else:
-                # Ждем до следующего интервала отправки
                 time.sleep(max(0, self.send_interval - (current_time - self.last_send_time)))
 
     def cleanup(self):
@@ -185,7 +196,10 @@ class RadioStream:
             self.current_thread.join()
         if self.buffer_thread:
             self.buffer_thread.join()
+        if self.send_thread:
+            self.send_thread.join()
         self.player.reset()
+
 
 
 def cleanup_resources():
