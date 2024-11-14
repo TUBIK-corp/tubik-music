@@ -1,0 +1,541 @@
+﻿Prompt: Analyze the frontend folder to understand its structure, purpose, and functionality. 
+Follow these steps to study the codebase:
+
+1. Read the README file to gain an overview of the project, its goals, and any setup instructions.
+
+2. Examine the folder structure to understand how the files and directories are organized.
+
+3. Identify the main entry point of the application (e.g., main.py, app.py, index.js) and start analyzing the code flow from there.
+
+4. Study the dependencies and libraries used in the project to understand the external tools and frameworks being utilized.
+
+5. Analyze the core functionality of the project by examining the key modules, classes, and functions.
+
+6. Look for any configuration files (e.g., config.py, .env) to understand how the project is configured and what settings are available.
+
+7. Investigate any tests or test directories to see how the project ensures code quality and handles different scenarios.
+
+8. Review any documentation or inline comments to gather insights into the codebase and its intended behavior.
+
+9. Identify any potential areas for improvement, optimization, or further exploration based on your analysis.
+
+10. Provide a summary of your findings, including the project's purpose, key features, and any notable observations or recommendations.
+
+Use the files and contents provided below to complete this analysis:
+
+
+README:
+README not found.
+
+Folder Structure: frontend
+.eslintrc.cjs
+Dockerfile
+index.html
+node_modules/
+package-lock.json [Skipped]
+package.json
+public/
+src/
+vite.config.js
+src\App.jsx
+src\components/
+src\index.css
+src\main.jsx
+src\components\AdminPanel.jsx
+src\components\Login.jsx
+src\components\Player.jsx
+public\index.html
+
+
+
+File: .eslintrc.cjs
+Content:
+module.exports = {
+  root: true,
+  env: { browser: true, es2020: true },
+  extends: [
+    'eslint:recommended',
+    'plugin:react/recommended',
+    'plugin:react/jsx-runtime',
+    'plugin:react-hooks/recommended',
+  ],
+  ignorePatterns: ['dist', '.eslintrc.cjs'],
+  parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+  settings: { react: { version: '18.2' } },
+  plugins: ['react-refresh'],
+  rules: {
+    'react-refresh/only-export-components': [
+      'warn',
+      { allowConstantExport: true },
+    ],
+    'react/prop-types': 'off', // Отключаем проверку prop-types, так как используем TypeScript
+  },
+}
+
+
+File: Dockerfile
+Content:
+# frontend/Dockerfile
+FROM node:16-alpine
+
+WORKDIR /app
+
+RUN chown -R node:node /app
+
+USER node
+
+COPY --chown=node:node package*.json ./
+
+RUN npm install
+
+COPY --chown=node:node . .
+
+RUN mkdir -p node_modules/.vite && chmod 777 node_modules/.vite
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
+
+
+File: index.html
+Content:
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TUBIK Player</title>
+    <!-- Можно добавить шрифты Google -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+
+
+File: package.json
+Content:
+{
+  "name": "tubik-player-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "js-sha256": "^0.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.27.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.11.1",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "eslint": "^9.11.1",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.12",
+    "globals": "^15.9.0",
+    "vite": "^5.4.8"
+  }
+}
+
+
+File: vite.config.js
+Content:
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+        '/api': {
+            target: 'http://tubik-corp.ru:24003',
+            changeOrigin: true,
+            secure: false,
+        }
+    },
+    watch: {
+      usePolling: true
+    }
+  }
+})
+
+
+File: src\App.jsx
+Content:
+// frontend/src/App.jsx
+import { useState } from 'react'
+import Player from './components/Player'
+import AdminPanel from './components/AdminPanel'
+import Login from './components/Login'
+
+function App() {
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  return (
+    <div className="app">
+      <h1>TUBIK Player</h1>
+      <Player />
+      {!isAdmin ? (
+        <Login onLogin={() => setIsAdmin(true)} />
+      ) : (
+        <AdminPanel />
+      )}
+    </div>
+  )
+}
+
+export default App
+
+
+File: src\index.css
+Content:
+/* frontend/src/index.css */
+:root {
+  --primary-color: #2196f3;
+  --error-color: #f44336;
+  --success-color: #4caf50;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+}
+
+.app {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.player {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.playlist {
+  margin-top: 20px;
+}
+
+.playlist div {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.playlist div:hover {
+  background-color: #f5f5f5;
+}
+
+.playlist div.active {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.login-form,
+.admin-panel {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+button {
+  padding: 10px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.error {
+  color: var(--error-color);
+}
+
+.success {
+  color: var(--success-color);
+}
+
+audio {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+
+File: src\main.jsx
+Content:
+// frontend/src/main.jsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+)
+
+
+File: src\components\AdminPanel.jsx
+Content:
+import { useState } from 'react'
+
+function AdminPanel() {
+  const [title, setTitle] = useState('')
+  const [file, setFile] = useState(null)
+  const [message, setMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setMessage('')
+    
+    try {
+      if (!file || !title) {
+        setMessage('Заполните все поля')
+        return
+      }
+
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('title', title)
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      
+      const data = await response.json()
+      
+      if (response.ok) {
+        setMessage('Трек успешно загружен')
+        setTitle('')
+        setFile(null)
+        // Сбросить input file
+        e.target.reset()
+      } else {
+        setMessage(`Ошибка: ${data.error || 'Что-то пошло не так'}`)
+      }
+    } catch (err) {
+      setMessage('Ошибка при загрузке')
+      console.error('Upload error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="admin-panel">
+      <h2>Загрузка нового трека</h2>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Название трека:</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <label>Файл MP3:</label>
+          <input
+            type="file"
+            accept=".mp3"
+            onChange={(e) => setFile(e.target.files[0])}
+            required
+          />
+        </div>
+        <button type="submit" disabled={isLoading}>
+          {isLoading ? 'Загрузка...' : 'Загрузить'}
+        </button>
+      </form>
+      {message && <p className={message.includes('успешно') ? 'success' : 'error'}>
+        {message}
+      </p>}
+    </div>
+  )
+}
+
+export default AdminPanel
+
+
+File: src\components\Login.jsx
+Content:
+// frontend/src/components/Login.jsx
+import { useState } from 'react'
+
+function Login({ onLogin }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        onLogin()
+        setError('')
+      } else {
+        setError('Неверный пароль')
+      }
+    } catch (err) {
+      setError('Ошибка при входе')
+    }
+  }
+
+  return (
+    <div className="login-form">
+      <h2>Вход в админ-панель</h2>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Введите пароль"
+          required
+        />
+        <button type="submit">Войти</button>
+      </form>
+      {error && <p className="error">{error}</p>}
+    </div>
+  )
+}
+
+export default Login
+
+
+File: src\components\Player.jsx
+Content:
+// frontend/src/components/Player.jsx
+import { useState, useEffect } from 'react'
+
+function Player() {
+  const [tracks, setTracks] = useState([])
+  const [currentTrack, setCurrentTrack] = useState(null)
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/tracks')
+      .then(res => res.json())
+      .then(data => {
+        setTracks(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error('Error fetching tracks:', err)
+        setError('Ошибка при загрузке треков')
+        setLoading(false)
+      })
+  }, [])
+
+  if (loading) {
+    return <div className="player-message">Загрузка...</div>
+  }
+
+  if (error) {
+    return <div className="player-message error">{error}</div>
+  }
+
+  return (
+    <div className="player">
+      {tracks.length === 0 ? (
+        <div className="player-message">
+          Треков пока нет. Добавьте первый трек через админ-панель.
+        </div>
+      ) : (
+        <>
+          <audio
+            controls
+            src={currentTrack ? `/api/tracks/${currentTrack.id}` : ''}
+            className="audio-player"
+          />
+          <div className="playlist">
+            <h3>Плейлист</h3>
+            {tracks.map(track => (
+              <div
+                key={track.id}
+                onClick={() => setCurrentTrack(track)}
+                className={`playlist-item ${currentTrack?.id === track.id ? 'active' : ''}`}
+              >
+                {track.title}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export default Player
+
+
+File: public\index.html
+Content:
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="TUBIK Music Player" />
+    <title>TUBIK Music Player</title>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
+
+

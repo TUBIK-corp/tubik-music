@@ -3,6 +3,8 @@ Flask-Cors==4.0.0
 Werkzeug==3.0.1
 python-dotenv==1.0.0
 flask-socketio
+gevent 
+gevent-websocket
 python-socketio
 eventlet
 pydub

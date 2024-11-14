@@ -40,10 +40,14 @@ function Radio() {
     try {
       if (!isConnected) {
         // Инициализация WebSocket соединения
-        socketRef.current = io('https://music.tubik-corp.ru/api/radio', {
-          transports: ['websocket'],
-          timeout: 10000,
+        socketRef.current = io('https://music.tubik-corp.ru', {
+          path: '/socket.io/',
+          transports: ['websocket', 'polling'], // Добавляем polling как fallback
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
         });
+      
 
         socketRef.current.on('connect', () => {
           setIsConnected(true);

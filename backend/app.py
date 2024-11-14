@@ -10,7 +10,15 @@ from pydub import AudioSegment
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='gevent',
+    ping_timeout=60,
+    ping_interval=25,
+    logger=True,
+    engineio_logger=True
+)
 
 # Constants
 CHUNK_SIZE = 1024
