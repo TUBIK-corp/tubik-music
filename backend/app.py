@@ -6,6 +6,7 @@ import os
 import random
 import threading
 from pydub import AudioSegment
+from pydub.utils import make_chunks
 from werkzeug.utils import secure_filename
 import time
 import queue
@@ -41,7 +42,7 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 0.1  # 100ms chunks
+        self.chunk_duration = 1  # 100ms chunks
         self.sample_rate = 44100
         self.channels = 2
 
