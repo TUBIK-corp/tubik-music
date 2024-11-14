@@ -73,14 +73,27 @@ function Radio() {
   const processAudioChunk = async (data) => {
     try {
       if (!data || !data.data) return;
-  
+
       const arrayBuffer = new Uint8Array(
         data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
       ).buffer;
-  
-      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+
+      const audioBuffer = audioContextRef.current.createBuffer(
+        data.channels,
+        arrayBuffer.byteLength / (data.channels * 2),
+        data.sample_rate  // Используйте частоту дискретизации из полученных данных
+      );
+
+      for (let channel = 0; channel < data.channels; channel++) {
+        const channelData = audioBuffer.getChannelData(channel);
+        const view = new Int16Array(arrayBuffer);
+        for (let i = 0; i < view.length; i++) {
+          channelData[i] = view[i] / 32768.0;
+        }
+      }
+
       audioBufferQueueRef.current.push(audioBuffer);
-  
+
     } catch (err) {
       console.error('Error processing audio chunk:', err);
     }

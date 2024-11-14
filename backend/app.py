@@ -49,7 +49,9 @@ class AudioPlayer:
     def load_track(self, track_path, track_info):
         try:
             audio = AudioSegment.from_file(track_path)
-            audio = audio.set_frame_rate(self.sample_rate).set_channels(self.channels)
+            # Используйте оригинальную частоту дискретизации файла
+            self.sample_rate = audio.frame_rate
+            self.channels = audio.channels
             self.current_segment = audio
             self.position = 0
             self.current_track_info = track_info
@@ -57,7 +59,7 @@ class AudioPlayer:
         except Exception as e:
             print(f"Error loading track: {e}")
             return False
-
+        
     def get_next_chunk(self):
         if not self.current_segment:
             return None
@@ -139,8 +141,8 @@ class RadioStream:
             try:
                 audio_data = {
                     'data': chunk.raw_data.hex(),
-                    'sample_rate': self.player.sample_rate,
-                    'channels': self.player.channels,
+                    'sample_rate': self.player.sample_rate,  # Используйте актуальную частоту дискретизации
+                    'channels': self.player.channels,  # Используйте актуальное количество каналов
                     'duration': self.player.chunk_duration
                 }
                 socketio.emit('audio_chunk', audio_data)
