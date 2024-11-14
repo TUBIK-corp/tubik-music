@@ -42,24 +42,14 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 1  # 100ms chunks
+        self.chunk_duration = 0.1  # 100ms chunks
         self.sample_rate = 44100
         self.channels = 2
 
     def load_track(self, track_path, track_info):
-        """Загружает и подготавливает трек к воспроизведению"""
         try:
-            # Загружаем аудио файл
             audio = AudioSegment.from_file(track_path)
-            
-            # Нормализуем параметры аудио
-            audio = audio.set_frame_rate(self.sample_rate)
-            audio = audio.set_channels(self.channels)
-            
-            # Нормализуем громкость
-            audio = audio.normalize()
-            
-            # Сохраняем подготовленный сегмент
+            audio = audio.set_frame_rate(self.sample_rate).set_channels(self.channels)
             self.current_segment = audio
             self.position = 0
             self.current_track_info = track_info
@@ -69,34 +59,22 @@ class AudioPlayer:
             return False
 
     def get_next_chunk(self):
-        """Получает следующий чанк аудио"""
         if not self.current_segment:
             return None
 
-        # Конвертируем позицию и длительность чанка в миллисекунды
         chunk_length = int(self.chunk_duration * 1000)
         start_ms = int(self.position * 1000)
         end_ms = start_ms + chunk_length
 
-        # Проверяем, не закончился ли трек
         if start_ms >= len(self.current_segment):
             return None
 
-        try:
-            # Получаем чанк аудио
-            chunk = self.current_segment[start_ms:end_ms]
-            
-            # Проверяем длину чанка
-            if len(chunk) < chunk_length:
-                return None
-
-            # Увеличиваем позицию
-            self.position += self.chunk_duration
-            
-            return chunk
-        except Exception as e:
-            print(f"Error getting chunk: {e}")
+        chunk = self.current_segment[start_ms:end_ms]
+        if len(chunk) < chunk_length:
             return None
+
+        self.position += self.chunk_duration
+        return chunk
 
     def reset(self):
         """Сбрасывает состояние плеера"""
@@ -144,26 +122,20 @@ class RadioStream:
         socketio.emit('listeners_update', len(self.clients))
 
     def stream_audio(self):
-        """Основной метод стриминга аудио"""
         self.is_running = True
-        
         while self.is_running and self.clients:
-            # Если нет текущего трека, загружаем новый
             if not self.player.current_segment:
                 track_path, track_info = self.get_random_track()
                 if not track_path or not self.player.load_track(track_path, track_info):
-                    time.sleep(1)  # Пауза перед следующей попыткой
+                    time.sleep(1)
                     continue
                 self.notify_track_change()
 
-            # Получаем следующий чанк аудио
             chunk = self.player.get_next_chunk()
             if chunk is None:
-                # Трек закончился
                 self.player.reset()
                 continue
 
-            # Отправляем аудио данные клиентам
             try:
                 audio_data = {
                     'data': chunk.raw_data.hex(),
@@ -172,9 +144,7 @@ class RadioStream:
                     'duration': self.player.chunk_duration
                 }
                 socketio.emit('audio_chunk', audio_data)
-                
-                # Добавляем паузу между чанками для синхронизации
-                time.sleep(self.chunk_interval)
+                time.sleep(self.player.chunk_duration)
             except Exception as e:
                 print(f"Error sending audio chunk: {e}")
                 continue
