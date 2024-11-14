@@ -9,15 +9,18 @@ function Radio() {
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
   const gainNodeRef = useRef(null);
-  const audioQueueRef = useRef([]);
-  const isPlayingRef = useRef(false);
+  const nextPlayTimeRef = useRef(0);
+  const audioBufferQueueRef = useRef([]);
+  const schedulerIntervalRef = useRef(null);
+  const SCHEDULE_AHEAD_TIME = 0.1; // Время планирования вперед (в секундах)
+  const SCHEDULER_INTERVAL = 50; 
 
   useEffect(() => {
-    // Инициализация Web Audio API
     try {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       gainNodeRef.current = audioContextRef.current.createGain();
       gainNodeRef.current.connect(audioContextRef.current.destination);
+      nextPlayTimeRef.current = audioContextRef.current.currentTime;
     } catch (err) {
       console.error('Error initializing Audio Context:', err);
       setError('Ошибка инициализации аудио');
@@ -27,6 +30,9 @@ function Radio() {
 
     return () => {
       disconnectFromRadio();
+      if (schedulerIntervalRef.current) {
+        clearInterval(schedulerIntervalRef.current);
+      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
@@ -45,6 +51,25 @@ function Radio() {
     }
   };
 
+  const scheduleAudioChunk = (audioBuffer, startTime) => {
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(gainNodeRef.current);
+    source.start(startTime);
+    return source.buffer.duration;
+  };
+
+  const audioScheduler = () => {
+    while (
+      audioBufferQueueRef.current.length > 0 &&
+      nextPlayTimeRef.current < audioContextRef.current.currentTime + SCHEDULE_AHEAD_TIME
+    ) {
+      const nextBuffer = audioBufferQueueRef.current.shift();
+      const duration = scheduleAudioChunk(nextBuffer, nextPlayTimeRef.current);
+      nextPlayTimeRef.current += duration;
+    }
+  };
+
   const processAudioChunk = async (data) => {
     try {
       if (!data || !data.data) return;
@@ -55,23 +80,19 @@ function Radio() {
 
       const audioBuffer = audioContextRef.current.createBuffer(
         data.channels,
-        arrayBuffer.byteLength / (data.channels * 2), // 16-bit audio
+        arrayBuffer.byteLength / (data.channels * 2),
         data.sample_rate
       );
 
-      // Заполняем буфер данными
       for (let channel = 0; channel < data.channels; channel++) {
         const channelData = audioBuffer.getChannelData(channel);
         const view = new Int16Array(arrayBuffer);
         for (let i = 0; i < view.length; i++) {
-          channelData[i] = view[i] / 32768.0; // нормализация 16-bit PCM
+          channelData[i] = view[i] / 32768.0;
         }
       }
 
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(gainNodeRef.current);
-      source.start();
+      audioBufferQueueRef.current.push(audioBuffer);
 
     } catch (err) {
       console.error('Error processing audio chunk:', err);
@@ -81,10 +102,16 @@ function Radio() {
   const connectToRadio = async () => {
     try {
       if (!isConnected) {
-        // Возобновляем AudioContext если он был приостановлен
         if (audioContextRef.current.state === 'suspended') {
           await audioContextRef.current.resume();
         }
+
+        // Сброс времени воспроизведения
+        nextPlayTimeRef.current = audioContextRef.current.currentTime;
+        audioBufferQueueRef.current = [];
+
+        // Запуск планировщика
+        schedulerIntervalRef.current = setInterval(audioScheduler, SCHEDULER_INTERVAL);
 
         socketRef.current = io('https://music.tubik-corp.ru', {
           path: '/socket.io/',
@@ -97,19 +124,19 @@ function Radio() {
         socketRef.current.on('connect', () => {
           setIsConnected(true);
           setError(null);
-          isPlayingRef.current = true;
         });
 
         socketRef.current.on('disconnect', () => {
           setIsConnected(false);
           setCurrentTrack(null);
-          isPlayingRef.current = false;
-          audioQueueRef.current = [];
+          audioBufferQueueRef.current = [];
         });
 
         socketRef.current.on('track_change', (trackInfo) => {
           setCurrentTrack(trackInfo);
-          audioQueueRef.current = []; // Очищаем очередь при смене трека
+          // Сброс очереди и времени при смене трека
+          audioBufferQueueRef.current = [];
+          nextPlayTimeRef.current = audioContextRef.current.currentTime;
         });
 
         socketRef.current.on('listeners_update', (count) => {
@@ -139,8 +166,13 @@ function Radio() {
       socketRef.current = null;
     }
 
-    isPlayingRef.current = false;
-    audioQueueRef.current = [];
+    if (schedulerIntervalRef.current) {
+      clearInterval(schedulerIntervalRef.current);
+      schedulerIntervalRef.current = null;
+    }
+
+    audioBufferQueueRef.current = [];
+    nextPlayTimeRef.current = audioContextRef.current.currentTime;
     setIsConnected(false);
   };
 

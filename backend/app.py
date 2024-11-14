@@ -42,6 +42,7 @@ class AudioPlayer:
         self.is_playing = False
         self.audio_queue = queue.Queue()
         self.current_track_info = None
+        self.chunk_duration = 0.1
 
     def load_track(self, track_path, track_info):
         """Загружает трек и подготавливает его к воспроизведению"""
@@ -57,21 +58,23 @@ class AudioPlayer:
             return False
 
     def get_next_chunk(self):
-        """Получает следующий чанк аудио"""
         if not self.current_segment:
             return None
 
-        chunk_ms = int(CHUNK_DURATION * 1000)
+        chunk_length = int(self.chunk_duration * 1000)  # Convert to milliseconds
         start_ms = int(self.position * 1000)
-        end_ms = start_ms + chunk_ms
+        end_ms = start_ms + chunk_length
 
         if start_ms >= len(self.current_segment):
             return None
 
         chunk = self.current_segment[start_ms:end_ms]
-        self.position += CHUNK_DURATION
-        return chunk
+        if len(chunk) < chunk_length:
+            return None
 
+        self.position += self.chunk_duration
+        return chunk
+    
     def reset(self):
         """Сбрасывает текущее состояние плеера"""
         self.current_segment = None
