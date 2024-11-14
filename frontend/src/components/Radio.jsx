@@ -17,7 +17,7 @@ function Radio() {
 
   useEffect(() => {
     try {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       gainNodeRef.current = audioContextRef.current.createGain();
       gainNodeRef.current.connect(audioContextRef.current.destination);
       nextPlayTimeRef.current = audioContextRef.current.currentTime;
@@ -60,17 +60,13 @@ function Radio() {
   };
 
   const audioScheduler = () => {
-    const currentTime = audioContextRef.current.currentTime;
     while (
       audioBufferQueueRef.current.length > 0 &&
-      nextPlayTimeRef.current < currentTime + SCHEDULE_AHEAD_TIME
+      nextPlayTimeRef.current < audioContextRef.current.currentTime + SCHEDULE_AHEAD_TIME
     ) {
       const nextBuffer = audioBufferQueueRef.current.shift();
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = nextBuffer;
-      source.connect(gainNodeRef.current);
-      source.start(nextPlayTimeRef.current);
-      nextPlayTimeRef.current += nextBuffer.duration;
+      const duration = scheduleAudioChunk(nextBuffer, nextPlayTimeRef.current);
+      nextPlayTimeRef.current += duration;
     }
   };
 
@@ -78,31 +74,11 @@ function Radio() {
     try {
       if (!data || !data.data) return;
   
-      // Декодируем base64 в ArrayBuffer
-      const binaryString = atob(data.data);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const arrayBuffer = bytes.buffer;
+      const arrayBuffer = new Uint8Array(
+        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+      ).buffer;
   
-      // Создаем AudioBuffer
-      const audioBuffer = audioContextRef.current.createBuffer(
-        data.channels,
-        arrayBuffer.byteLength / (data.channels * 2),
-        data.sample_rate
-      );
-  
-      // Заполняем AudioBuffer данными
-      for (let channel = 0; channel < data.channels; channel++) {
-        const channelData = audioBuffer.getChannelData(channel);
-        const dataView = new DataView(arrayBuffer);
-        for (let i = 0; i < channelData.length; i++) {
-          channelData[i] = dataView.getInt16(i * 2 + channel * 2, true) / 32768.0;
-        }
-      }
-  
+      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
       audioBufferQueueRef.current.push(audioBuffer);
   
     } catch (err) {

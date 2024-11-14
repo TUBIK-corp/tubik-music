@@ -10,7 +10,6 @@ from pydub.utils import make_chunks
 from werkzeug.utils import secure_filename
 import time
 import queue
-import base64
 
 app = Flask(__name__)
 socketio = SocketIO(
@@ -43,22 +42,14 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 0.5  # 500ms chunks
+        self.chunk_duration = 0.1  # 100ms chunks
         self.sample_rate = 44100
         self.channels = 2
 
     def load_track(self, track_path, track_info):
         try:
             audio = AudioSegment.from_file(track_path)
-            
-            # Убедимся, что частота дискретизации соответствует нашей целевой
-            if audio.frame_rate != self.sample_rate:
-                audio = audio.set_frame_rate(self.sample_rate)
-            
-            # Убедимся, что количество каналов соответствует нашему целевому
-            if audio.channels != self.channels:
-                audio = audio.set_channels(self.channels)
-            
+            audio = audio.set_frame_rate(self.sample_rate).set_channels(self.channels)
             self.current_segment = audio
             self.position = 0
             self.current_track_info = track_info
@@ -147,13 +138,13 @@ class RadioStream:
             
             try:
                 audio_data = {
-                    'data': base64.b64encode(chunk.raw_data).decode('utf-8'),
+                    'data': chunk.raw_data.hex(),
                     'sample_rate': self.player.sample_rate,
                     'channels': self.player.channels,
                     'duration': self.player.chunk_duration
                 }
                 socketio.emit('audio_chunk', audio_data)
-                time.sleep(self.player.chunk_duration * 0.9)
+                time.sleep(self.player.chunk_duration)
             except Exception as e:
                 print(f"Error sending audio chunk: {e}")
                 continue
