@@ -12,8 +12,8 @@ function Radio() {
   const nextPlayTimeRef = useRef(0);
   const audioBufferQueueRef = useRef([]);
   const schedulerIntervalRef = useRef(null);
-  const SCHEDULE_AHEAD_TIME = 0.1; // Время планирования вперед (в секундах)
-  const SCHEDULER_INTERVAL = 50; 
+  const SCHEDULE_AHEAD_TIME = 0.5; // Время планирования вперед (в секундах)
+  const SCHEDULER_INTERVAL = 100; 
 
   useEffect(() => {
     try {
@@ -73,27 +73,13 @@ function Radio() {
   const processAudioChunk = async (data) => {
     try {
       if (!data || !data.data) return;
-
-      const arrayBuffer = new Uint8Array(
-        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-      ).buffer;
-
-      const audioBuffer = audioContextRef.current.createBuffer(
-        data.channels,
-        arrayBuffer.byteLength / (data.channels * 2),
-        data.sample_rate
-      );
-
-      for (let channel = 0; channel < data.channels; channel++) {
-        const channelData = audioBuffer.getChannelData(channel);
-        const view = new Int16Array(arrayBuffer);
-        for (let i = 0; i < view.length; i++) {
-          channelData[i] = view[i] / 32768.0;
-        }
-      }
-
+  
+      const arrayBuffer = data.data;
+  
+      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+  
       audioBufferQueueRef.current.push(audioBuffer);
-
+  
     } catch (err) {
       console.error('Error processing audio chunk:', err);
     }
