@@ -94,6 +94,8 @@ class RadioStream:
         self.player = AudioPlayer()
         self.is_running = False
         self.buffer_thread = None
+        self.send_interval = 0.5  # Интервал отправки пакетов (2 пакета в секунду)
+        self.last_send_time = 0
 
     def fill_buffer(self):
         while not self.player.buffer.full():
@@ -127,16 +129,20 @@ class RadioStream:
 
     def buffer_audio(self):
         while self.is_running:
-            if self.fill_buffer():
-                time.sleep(self.player.chunk_duration)
-            else:
-                self.player.reset()
-                time.sleep(1)  # Добавляем паузу перед началом новой песни
-                track_path, track_info = self.get_random_track()
-                if track_path and self.player.load_track(track_path, track_info):
-                    self.notify_track_change()
+            if self.player.buffer.qsize() < self.player.buffer.maxsize:
+                chunk = self.player.get_next_chunk()
+                if chunk is None:
+                    self.player.reset()
+                    time.sleep(1)  # Пауза перед новой песней
+                    track_path, track_info = self.get_random_track()
+                    if track_path and self.player.load_track(track_path, track_info):
+                        self.notify_track_change()
+                    else:
+                        time.sleep(1)
                 else:
-                    time.sleep(1)
+                    self.player.buffer.put(chunk)
+            else:
+                time.sleep(0.1)  # Небольшая пауза, если буфер полон
 
     def notify_track_change(self):
         """Уведомляет клиентов о смене трека"""
@@ -153,21 +159,25 @@ class RadioStream:
         self.buffer_thread.start()
 
         while self.is_running and self.clients:
-            try:
-                chunk = self.player.buffer.get(timeout=1)
-                audio_data = {
-                    'data': chunk.raw_data.hex(),
-                    'sample_rate': self.player.sample_rate,
-                    'channels': self.player.channels,
-                    'duration': self.player.chunk_duration
-                }
-                socketio.emit('audio_chunk', audio_data)
-                time.sleep(self.player.chunk_duration * 0.95)  # Небольшая пауза между отправками
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"Error sending audio chunk: {e}")
-                continue
+            current_time = time.time()
+            if current_time - self.last_send_time >= self.send_interval:
+                try:
+                    chunk = self.player.buffer.get(block=False)
+                    audio_data = {
+                        'data': chunk.raw_data.hex(),
+                        'sample_rate': self.player.sample_rate,
+                        'channels': self.player.channels,
+                        'duration': self.player.chunk_duration
+                    }
+                    socketio.emit('audio_chunk', audio_data)
+                    self.last_send_time = current_time
+                except queue.Empty:
+                    pass
+                except Exception as e:
+                    print(f"Error sending audio chunk: {e}")
+            else:
+                # Ждем до следующего интервала отправки
+                time.sleep(max(0, self.send_interval - (current_time - self.last_send_time)))
 
     def cleanup(self):
         self.is_running = False
@@ -265,18 +275,16 @@ radio = RadioStream()
 
 @socketio.on('connect')
 def handle_connect():
-    """Обработка подключения клиента"""
     radio.clients.add(request.sid)
     print(f"Client connected. Total clients: {len(radio.clients)}")
     
-    # Запускаем стриминг, если это первый клиент
     if len(radio.clients) == 1:
         radio.current_thread = threading.Thread(target=radio.stream_audio)
         radio.current_thread.start()
     else:
-        # Отправляем текущий буфер новому клиенту
-        for _ in range(radio.player.buffer.qsize()):
-            chunk = radio.player.buffer.get()
+        # Отправляем несколько последних чанков новому клиенту
+        chunks = list(radio.player.buffer.queue)[-5:]  # Последние 5 чанков
+        for chunk in chunks:
             audio_data = {
                 'data': chunk.raw_data.hex(),
                 'sample_rate': radio.player.sample_rate,
@@ -284,7 +292,6 @@ def handle_connect():
                 'duration': radio.player.chunk_duration
             }
             emit('audio_chunk', audio_data)
-            radio.player.buffer.put(chunk)
     
     radio.notify_listeners_count()
     if radio.player.current_track_info:
