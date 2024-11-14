@@ -197,7 +197,7 @@ function AdminPanel() {
               <tr key={track.id}>
                 <td>
                   <img
-                    src={track.imageUrl || '/api/images/default.jpg'}
+                    src={track.imageUrl || 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg'}
                     alt={track.title}
                     style={{ width: '50px', height: '50px', objectFit: 'cover' }}
                   />

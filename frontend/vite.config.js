@@ -9,9 +9,14 @@ export default defineConfig({
     port: process.env.SERVER_PORT,
     proxy: {
         '/api': {
-            target: process.env.API_URL,
+            target: process.env.API_URL || "https://music.tubik-corp.ru",
             changeOrigin: true,
             secure: false,
+        },
+        '/socket.io': {
+          target: process.env.API_URL || "https://music.tubik-corp.ru",
+          changeOrigin: true,
+          secure: false,
         }
     },
     watch: {

@@ -1,0 +1,284 @@
+/* Main Layout */
+.radio-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 5rem 2rem 8rem;
+    background: var(--background-main);
+    position: relative;
+}
+
+/* Background Effects */
+.radio-wave-animation {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        45deg,
+        rgba(142, 68, 173, 0.05) 0%,
+        rgba(231, 76, 60, 0.05) 50%,
+        rgba(142, 68, 173, 0.05) 100%
+    );
+    z-index: 0;
+    animation: waveEffect 15s infinite linear;
+    backdrop-filter: blur(100px);
+}
+
+/* Main Radio Player Container */
+.radio-player {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    background: var(--background-card);
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Radio Content Layout */
+.radio-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    padding: 2rem;
+}
+
+/* Album Art Container */
+.radio-image-container {
+    width: 300px;
+    height: 300px;
+    position: relative;
+    margin: 0 auto;
+}
+
+.radio-image {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 0 30px rgba(142, 68, 173, 0.3);
+    transition: all 0.5s ease;
+}
+
+.radio-image.spinning {
+    animation: spin 20s linear infinite;
+}
+
+/* Radio Info Section */
+.radio-info {
+    text-align: center;
+    width: 100%;
+    max-width: 600px;
+}
+
+.radio-info h2 {
+    font-size: 2rem;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    font-weight: 700;
+}
+
+.radio-info p {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+/* Current Track Display */
+.current-track {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1.5rem;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 600px;
+    text-align: center;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.current-track .track-title {
+    font-size: 1.2rem;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.current-track .track-artist {
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+/* Radio Controls */
+.radio-controls {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.radio-btn {
+    padding: 1rem 2.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: white;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.radio-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(142, 68, 173, 0.4);
+}
+
+.radio-btn.connected {
+    background: #e74c3c;
+}
+
+/* Status Indicator */
+.radio-status {
+    position: absolute;
+    top: 2rem;
+    right: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 20px;
+    backdrop-filter: blur(5px);
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #4CAF50;
+}
+
+.status-dot.connected {
+    animation: pulse 2s infinite;
+}
+
+.listeners-count {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-left: 0.5rem;
+}
+
+/* Error Message */
+.error-message {
+    padding: 1rem 2rem;
+    background: rgba(231, 76, 60, 0.2);
+    border-radius: 12px;
+    color: #e74c3c;
+    text-align: center;
+    margin-top: 1rem;
+    backdrop-filter: blur(5px);
+}
+
+/* Animations */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.5; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes waveEffect {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .radio-container {
+        padding: 3rem 1rem 6rem;
+    }
+
+    .radio-player {
+        padding: 1rem;
+    }
+
+    .radio-image-container {
+        width: 200px;
+        height: 200px;
+    }
+
+    .radio-info h2 {
+        font-size: 1.5rem;
+    }
+
+    .radio-info p {
+        font-size: 1rem;
+    }
+
+    .radio-btn {
+        padding: 0.8rem 1.8rem;
+        font-size: 1rem;
+    }
+
+    .radio-status {
+        position: static;
+        margin-bottom: 1rem;
+    }
+}
+
+/* Additional Effects */
+.radio-player:hover .radio-image {
+    transform: scale(1.05);
+}
+
+.radio-btn:active {
+    transform: scale(0.95);
+}
+
+/* Glass Effect */
+.radio-player,
+.current-track,
+.radio-status {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Loading Animation */
+.radio-loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.radio-loading::after {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    border-top-color: var(--primary-color);
+    animation: spin 1s linear infinite;
+}
