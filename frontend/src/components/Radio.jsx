@@ -83,6 +83,13 @@ function Radio() {
       ).buffer;
   
       const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+  
+      // Проверяем, соответствует ли частота дискретизации
+      if (audioBuffer.sampleRate !== audioContextRef.current.sampleRate) {
+        console.warn(`Sample rate mismatch: got ${audioBuffer.sampleRate}, expected ${audioContextRef.current.sampleRate}`);
+        // Здесь можно добавить код для ресемплирования, если это необходимо
+      }
+  
       audioBufferQueueRef.current.push(audioBuffer);
   
     } catch (err) {

@@ -42,21 +42,22 @@ class AudioPlayer:
         self.position = 0
         self.is_playing = False
         self.current_track_info = None
-        self.chunk_duration = 0.5  # 100ms chunks
+        self.chunk_duration = 0.5  # 500ms chunks
         self.sample_rate = 44100
         self.channels = 2
 
     def load_track(self, track_path, track_info):
         try:
             audio = AudioSegment.from_file(track_path)
-
-            # Проверяем и конвертируем частоту дискретизации, если необходимо
+            
+            # Убедимся, что частота дискретизации соответствует нашей целевой
             if audio.frame_rate != self.sample_rate:
                 audio = audio.set_frame_rate(self.sample_rate)
-
-            # Устанавливаем количество каналов
-            audio = audio.set_channels(self.channels)
-
+            
+            # Убедимся, что количество каналов соответствует нашему целевому
+            if audio.channels != self.channels:
+                audio = audio.set_channels(self.channels)
+            
             self.current_segment = audio
             self.position = 0
             self.current_track_info = track_info
@@ -137,12 +138,12 @@ class RadioStream:
                     time.sleep(1)
                     continue
                 self.notify_track_change()
-    
+
             chunk = self.player.get_next_chunk()
             if chunk is None:
                 self.player.reset()
                 continue
-            
+
             try:
                 audio_data = {
                     'data': chunk.raw_data.hex(),
