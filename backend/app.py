@@ -78,7 +78,9 @@ class RadioStream:
     def _start_ffmpeg_stream(self, input_file):
         if self.current_process:
             self.current_process.terminate()
+            time.sleep(1)
             
+        self.current_track_version += 1
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
         playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{self.current_track_version}.m3u8"
         
@@ -147,9 +149,15 @@ def save_tracks(tracks):
 
 @app.route('/api/radio/hls/playlist.m3u8')
 def get_playlist():
-    playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{radio.current_track_version}.m3u8"
-    if os.path.exists(playlist_path):
-        return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
+    version = request.args.get('v', radio.current_track_version)
+    playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{version}.m3u8"
+    
+    # Ждем, пока плейлист не будет создан (максимум 5 секунд)
+    for _ in range(10):
+        if os.path.exists(playlist_path):
+            return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
+        time.sleep(0.5)
+    
     return '', 404
 
 @app.route('/api/radio/hls/<segment>')

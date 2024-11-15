@@ -29,11 +29,10 @@ function Radio() {
       if (!response.ok) throw new Error('Failed to fetch radio status');
       const status = await response.json();
       
-      // Если версия трека изменилась, переподключаем HLS
       if (isConnected && status.current_track_version !== currentTrackVersion) {
         console.log('Track version changed, reconnecting HLS...');
         setCurrentTrackVersion(status.current_track_version);
-        reinitializeHLS();
+        setTimeout(() => reinitializeHLS(status.current_track_version), 2000);
       }
       
       setRadioStatus(status);
@@ -49,15 +48,16 @@ function Radio() {
       setError('Не удалось получить статус радио');
     }
   };
-  const reinitializeHLS = () => {
+
+
+  const reinitializeHLS = (version) => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
-      hlsRef.current = null;
     }
-    initializeHLS();
+    initializeHLS(version);
   };
 
-  const initializeHLS = () => {
+  const initializeHLS = (version) => {
     if (Hls.isSupported()) {
       hlsRef.current = new Hls({
         enableWorker: true,
@@ -75,7 +75,14 @@ function Radio() {
 
       hlsRef.current.attachMedia(audioRef.current);
       hlsRef.current.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hlsRef.current.loadSource(`/api/radio/hls/playlist.m3u8?v=${currentTrackVersion}`);
+        const playlistUrl = `/api/radio/hls/playlist.m3u8?v=${version}`;
+        console.log('Loading playlist:', playlistUrl);
+        hlsRef.current.loadSource(playlistUrl);
+      });
+
+      hlsRef.current.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('HLS manifest parsed, starting playback...');
+        audioRef.current.play().catch(console.error);
       });
 
       hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
@@ -115,7 +122,7 @@ function Radio() {
       }
 
       if (!isConnected) {
-        initializeHLS();
+        initializeHLS(radioStatus.current_track_version);
         setIsConnected(true);
         setError(null);
       } else {
