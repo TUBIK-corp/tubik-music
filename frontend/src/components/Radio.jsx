@@ -8,21 +8,19 @@ function Radio() {
   const [radioStatus, setRadioStatus] = useState(null);
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
-  const lastSegmentRef = useRef(null);
+  const statusCheckInterval = useRef(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
   useEffect(() => {
     checkRadioStatus();
-    const interval = setInterval(checkRadioStatus, 3000); // увеличиваем интервал до 3 секунд
-    return () => clearInterval(interval);
+    statusCheckInterval.current = setInterval(checkRadioStatus, 5000);
+    return () => {
+      if (statusCheckInterval.current) {
+        clearInterval(statusCheckInterval.current);
+      }
+      disconnectFromRadio();
+    };
   }, []);
-
-  useEffect(() => {
-    // Если трек изменился и мы подключены, переинициализируем HLS
-    if (currentTrack && isConnected) {
-      reinitializeHLS();
-    }
-  }, [currentTrack?.id]); // Отслеживаем изменение ID трека
 
   const checkRadioStatus = async () => {
     try {
@@ -30,16 +28,14 @@ function Radio() {
       if (!response.ok) throw new Error('Failed to fetch radio status');
       const status = await response.json();
       
-      setRadioStatus(status);
-      setCurrentTrack(status.current_track);
-
-      // Если сегмент изменился и плеер подключен, переинициализируем HLS
-      if (status.current_segment && 
-          lastSegmentRef.current !== status.current_segment && 
-          isConnected) {
-        lastSegmentRef.current = status.current_segment;
+      // Если трек изменился, переподключаем HLS
+      if (isConnected && status.current_track?.id !== currentTrack?.id) {
+        console.log('Track changed, reconnecting HLS...');
         reinitializeHLS();
       }
+      
+      setRadioStatus(status);
+      setCurrentTrack(status.current_track);
       
       if (!status.has_tracks) {
         setError('Нет доступных треков. Загрузите хотя бы один трек.');
@@ -47,14 +43,15 @@ function Radio() {
         setError(null);
       }
     } catch (err) {
+      console.error('Status check error:', err);
       setError('Не удалось получить статус радио');
-      console.error(err);
     }
   };
 
   const reinitializeHLS = () => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
+      hlsRef.current = null;
     }
     initializeHLS();
   };
@@ -65,11 +62,14 @@ function Radio() {
         enableWorker: true,
         lowLatencyMode: true,
         manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 1,
+        manifestLoadingMaxRetry: 3,
         manifestLoadingRetryDelay: 500,
         levelLoadingTimeOut: 10000,
-        levelLoadingMaxRetry: 1,
+        levelLoadingMaxRetry: 3,
         levelLoadingRetryDelay: 500,
+        fragLoadingTimeOut: 10000,
+        fragLoadingMaxRetry: 3,
+        fragLoadingRetryDelay: 500,
       });
 
       hlsRef.current.attachMedia(audioRef.current);
@@ -81,31 +81,28 @@ function Radio() {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.log('Fatal network error encountered, trying to recover...');
+              console.log('Network error, trying to recover...');
               hlsRef.current.startLoad();
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.log('Fatal media error encountered, trying to recover...');
+              console.log('Media error, trying to recover...');
               hlsRef.current.recoverMediaError();
               break;
             default:
-              console.log('Fatal error, cannot recover');
-              disconnectFromRadio();
+              console.log('Fatal error, reconnecting...');
+              reinitializeHLS();
               break;
           }
         }
       });
 
-      // Добавляем обработчик успешной загрузки манифеста
       hlsRef.current.on(Hls.Events.MANIFEST_PARSED, () => {
-        audioRef.current.play().catch(e => console.error('Play failed:', e));
+        console.log('HLS manifest parsed, starting playback...');
+        audioRef.current.play().catch(console.error);
       });
 
     } else if (audioRef.current.canPlayType('application/vnd.apple.mpegurl')) {
       audioRef.current.src = '/api/radio/hls/playlist.m3u8';
-      audioRef.current.addEventListener('loadedmetadata', () => {
-        audioRef.current.play().catch(e => console.error('Play failed:', e));
-      });
     }
   };
 
@@ -124,8 +121,8 @@ function Radio() {
         disconnectFromRadio();
       }
     } catch (err) {
-      setError('Не удалось подключиться к радио');
       console.error('Connection error:', err);
+      setError('Не удалось подключиться к радио');
     }
   };
 
@@ -139,14 +136,27 @@ function Radio() {
       audioRef.current.src = '';
     }
     setIsConnected(false);
-    lastSegmentRef.current = null;
   };
+
+  // Добавляем обработчик ошибок воспроизведения
+  useEffect(() => {
+    const handleAudioError = (e) => {
+      console.error('Audio error:', e);
+      if (isConnected) {
+        reinitializeHLS();
+      }
+    };
+
+    const audio = audioRef.current;
+    audio.addEventListener('error', handleAudioError);
+    return () => audio.removeEventListener('error', handleAudioError);
+  }, [isConnected]);
 
   return (
     <div className="radio-container">
+      <audio ref={audioRef} />
       <div className="radio-wave-animation" />
       <div className="radio-player">
-        <audio ref={audioRef} />
         
         <div className="radio-status">
           <div className={`status-dot ${isConnected ? 'connected' : ''}`} />
