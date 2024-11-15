@@ -61,8 +61,8 @@ class RadioStream:
         return len(tracks) > 0
 
     def _stream_manager(self):
-        output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
-        playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+        output_pattern = os.path.abspath(f"{HLS_SEGMENTS_DIR}/segment_%03d.ts")
+        playlist_path = os.path.abspath(f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}")
         
         command = [
             'ffmpeg',
@@ -91,9 +91,13 @@ class RadioStream:
             self.playlist_file.seek(0)
             self.playlist_file.truncate()
             for track in tracks:
-                track_path = f"{UPLOAD_FOLDER}/{track['id']}.mp3"
-                self.playlist_file.write(f"file '{track_path}'\n")
+                track_path = os.path.abspath(f"{UPLOAD_FOLDER}/{track['id']}.mp3")
+                if os.path.exists(track_path):
+                    self.playlist_file.write(f"file '{track_path}'\n")
+                else:
+                    print(f"Warning: File not found: {track_path}")
             self.playlist_file.flush()
+            os.fsync(self.playlist_file.fileno())  # Ensure the file is written to disk
             self.current_track_info = tracks[0] if tracks else None
             self.playlist_update_event.set()
             time.sleep(60)  # Обновляем плейлист каждую минуту
