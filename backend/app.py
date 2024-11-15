@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, send_file, Response
 import m3u8
-from flask_socketio import SocketIO, emit
 import json
 import hashlib
 import os
@@ -57,6 +56,8 @@ class RadioStream:
         self.playlist = []
         self.segment_count = 0
         self._stream_thread = None
+        self.clients = set()
+        self.current_segment_number = 0
         
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
@@ -94,6 +95,8 @@ class RadioStream:
         for file in os.listdir(HLS_SEGMENTS_DIR):
             if file.endswith('.ts'):
                 os.remove(os.path.join(HLS_SEGMENTS_DIR, file))
+        
+        self.current_segment_number = 0 
             
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
         playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
@@ -180,10 +183,27 @@ def get_hls_segment(segment):
 
 @app.route('/api/radio/status')
 def get_radio_status():
+    # Получаем текущий номер сегмента из плейлиста
+    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+    current_segment = None
+    
+    if os.path.exists(playlist_path):
+        try:
+            with open(playlist_path, 'r') as f:
+                playlist_content = f.read()
+                if playlist_content:
+                    playlist = m3u8.loads(playlist_content)
+                    if playlist.segments:
+                        current_segment = playlist.segments[-1].uri
+        except Exception as e:
+            print(f"Error reading playlist: {e}")
+    
     return jsonify({
         'is_running': radio.is_running,
         'has_tracks': radio._has_tracks(),
-        'current_track': radio.current_track_info
+        'current_track': radio.current_track_info,
+        'current_segment': current_segment,
+        'timestamp': time.time()
     })
 
 @app.route('/api/radio/current', methods=['GET'])
