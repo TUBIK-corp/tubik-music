@@ -47,8 +47,7 @@ class RadioStream:
         self.playlist = []
         self.segment_count = 0
         self._stream_thread = None
-        self.clients = set()
-        self.current_segment_number = 0
+        self.current_track_version = 0 
         
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
@@ -81,13 +80,15 @@ class RadioStream:
     def _start_ffmpeg_stream(self, input_file):
         if self.current_process:
             self.current_process.terminate()
+            time.sleep(0.5)
             
         # Очищаем старые сегменты
-        for file in os.listdir(HLS_SEGMENTS_DIR):
-            if file.endswith('.ts'):
-                os.remove(os.path.join(HLS_SEGMENTS_DIR, file))
-        
-        self.current_segment_number = 0 
+        try:
+            for file in os.listdir(HLS_SEGMENTS_DIR):
+                if file.endswith('.ts') or file == HLS_PLAYLIST_FILE:
+                    os.remove(os.path.join(HLS_SEGMENTS_DIR, file))
+        except Exception as e:
+            print(f"Error cleaning HLS directory: {e}")
             
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
         playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
@@ -98,23 +99,24 @@ class RadioStream:
             '-f', 'hls',
             '-hls_time', str(HLS_SEGMENT_LENGTH),
             '-hls_list_size', '6',
-            '-hls_flags', 'delete_segments+append_list',
+            '-hls_flags', 'delete_segments+append_list+omit_endlist',  # Добавляем omit_endlist
             '-hls_segment_filename', output_pattern,
             playlist_path
         ]
         
         try:
             self.current_process = subprocess.Popen(command)
+            self.current_track_version += 1  # Увеличиваем версию при смене трека
         except Exception as e:
             print(f"Error starting FFmpeg: {e}")
             self.current_process = None
-
+            
     def get_random_track(self):
         tracks = load_tracks()
         if not tracks:
             return None, None
 
-        if not self.played_tracks or len(self.played_tracks) >= len(tracks):
+        if len(self.played_tracks) >= len(tracks):
             self.played_tracks.clear()
 
         available_tracks = [t for t in tracks if t['id'] not in self.played_tracks]
@@ -127,6 +129,7 @@ class RadioStream:
         track_path = f"{UPLOAD_FOLDER}/{track['id']}.mp3"
         
         if not os.path.exists(track_path):
+            print(f"Track file not found: {track_path}")
             return None, None
             
         return track_path, track
@@ -174,27 +177,13 @@ def get_hls_segment(segment):
 
 @app.route('/api/radio/status')
 def get_radio_status():
-    # Получаем текущий номер сегмента из плейлиста
-    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
-    current_segment = None
-    
-    if os.path.exists(playlist_path):
-        try:
-            with open(playlist_path, 'r') as f:
-                playlist_content = f.read()
-                if playlist_content:
-                    playlist = m3u8.loads(playlist_content)
-                    if playlist.segments:
-                        current_segment = playlist.segments[-1].uri
-        except Exception as e:
-            print(f"Error reading playlist: {e}")
-    
     return jsonify({
         'is_running': radio.is_running,
         'has_tracks': radio._has_tracks(),
-        'current_track': radio.current_track_info,
-        'current_segment': current_segment,
-        'timestamp': time.time()
+        'current_track': {
+            **radio.current_track_info,
+            'version': radio.current_track_version  # Добавляем версию трека
+        } if radio.current_track_info else None
     })
 
 @app.route('/api/radio/current', methods=['GET'])
@@ -267,10 +256,12 @@ def upload_track():
 
     return jsonify({'success': True})
 
+# WebSocket Events
+radio = RadioStream()
+
+
 def cleanup_resources():
     radio.stop_streaming()
-
-radio = RadioStream()
 
 
 # Обработчик для корректного завершения работы
