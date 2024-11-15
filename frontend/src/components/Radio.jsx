@@ -1,51 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import Hls from 'hls.js';
 
 function Radio() {
   const [isConnected, setIsConnected] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [error, setError] = useState(null);
   const [listeners, setListeners] = useState(0);
-  const socketRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const gainNodeRef = useRef(null);
-  const nextPlayTimeRef = useRef(0);
-  const audioBufferQueueRef = useRef([]);
-  const schedulerIntervalRef = useRef(null);
-  const SCHEDULE_AHEAD_TIME = 1; // Планирование на 1 секунду вперед
-  const SCHEDULER_INTERVAL = 100; // Интервал планировщика 100ms 
+  const audioRef = useRef(null);
+  const hlsRef = useRef(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
-
   useEffect(() => {
-    try {
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 44100 // или другая частота, соответствующая вашим аудиоданным
-      });
-      gainNodeRef.current = audioContextRef.current.createGain();
-      gainNodeRef.current.connect(audioContextRef.current.destination);
-      nextPlayTimeRef.current = audioContextRef.current.currentTime;
-    } catch (err) {
-      console.error('Error initializing Audio Context:', err);
-      setError('Ошибка инициализации аудио');
-    }
-
     fetchCurrentTrack();
-
-    return () => {
-      disconnectFromRadio();
-      if (schedulerIntervalRef.current) {
-        clearInterval(schedulerIntervalRef.current);
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
-    };
+    const interval = setInterval(fetchCurrentTrack, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchCurrentTrack = async () => {
     try {
-      const response = await fetch('https://music.tubik-corp.ru/api/radio/current');
+      const response = await fetch('/api/radio/current');
       if (!response.ok) throw new Error('Failed to fetch current track');
       const data = await response.json();
       setCurrentTrack(data);
@@ -55,121 +28,50 @@ function Radio() {
     }
   };
 
-  const scheduleAudioChunk = (audioBuffer, startTime) => {
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(gainNodeRef.current);
-    source.start(startTime);
-    return source.buffer.duration;
-  };
-
-  const audioScheduler = () => {
-    const currentTime = audioContextRef.current.currentTime;
-    
-    // Если следующее время воспроизведения отстает от текущего времени,
-    // сбросим его на текущее время
-    if (nextPlayTimeRef.current < currentTime) {
-      nextPlayTimeRef.current = currentTime;
-    }
-  
-    while (
-      audioBufferQueueRef.current.length > 0 &&
-      nextPlayTimeRef.current < currentTime + SCHEDULE_AHEAD_TIME
-    ) {
-      const nextBuffer = audioBufferQueueRef.current.shift();
-      const duration = scheduleAudioChunk(nextBuffer, nextPlayTimeRef.current);
-      nextPlayTimeRef.current += duration;
-    }
-  };
-
-  const processAudioChunk = async (data) => {
-    try {
-      if (!data || !data.data) return;
-  
-      const arrayBuffer = new Uint8Array(
-        data.data.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-      ).buffer;
-  
-      const audioBuffer = audioContextRef.current.createBuffer(
-        data.channels,
-        arrayBuffer.byteLength / (data.channels * 2),
-        data.sample_rate
-      );
-
-      console.log('Received chunk:', {
-        sampleRate: data.sample_rate,
-        channels: data.channels,
-        duration: data.duration,
-        bufferSize: arrayBuffer.byteLength
-      });
-  
-      const view = new Int16Array(arrayBuffer);
-      for (let channel = 0; channel < data.channels; channel++) {
-        const channelData = audioBuffer.getChannelData(channel);
-        for (let i = 0; i < channelData.length; i++) {
-          channelData[i] = view[i * data.channels + channel] / 32768.0;
-        }
+  const initializeHLS = () => {
+    if (Hls.isSupported()) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
       }
-  
-      audioBufferQueueRef.current.push(audioBuffer);
-  
-    } catch (err) {
-      console.error('Error processing audio chunk:', err);
+
+      hlsRef.current = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+
+      hlsRef.current.attachMedia(audioRef.current);
+      hlsRef.current.on(Hls.Events.MEDIA_ATTACHED, () => {
+        hlsRef.current.loadSource('/api/radio/stream/playlist.m3u8');
+      });
+
+      hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hlsRef.current.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hlsRef.current.recoverMediaError();
+              break;
+            default:
+              disconnectFromRadio();
+              break;
+          }
+        }
+      });
+    } else if (audioRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+      // Для Safari, который имеет встроенную поддержку HLS
+      audioRef.current.src = '/api/radio/stream/playlist.m3u8';
     }
   };
 
   const connectToRadio = async () => {
     try {
       if (!isConnected) {
-        if (audioContextRef.current.state === 'suspended') {
-          await audioContextRef.current.resume();
-        }
-
-        // Сброс времени воспроизведения
-        nextPlayTimeRef.current = audioContextRef.current.currentTime;
-        audioBufferQueueRef.current = [];
-
-        // Запуск планировщика
-        schedulerIntervalRef.current = setInterval(audioScheduler, SCHEDULER_INTERVAL);
-
-        socketRef.current = io('https://music.tubik-corp.ru', {
-          path: '/socket.io/',
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-        });
-
-        socketRef.current.on('connect', () => {
-          setIsConnected(true);
-          setError(null);
-        });
-
-        socketRef.current.on('disconnect', () => {
-          setIsConnected(false);
-          setCurrentTrack(null);
-          audioBufferQueueRef.current = [];
-        });
-
-        socketRef.current.on('track_change', (trackInfo) => {
-          setCurrentTrack(trackInfo);
-          // Сброс очереди и времени при смене трека
-          audioBufferQueueRef.current = [];
-          nextPlayTimeRef.current = audioContextRef.current.currentTime;
-        });
-
-        socketRef.current.on('listeners_update', (count) => {
-          setListeners(count);
-        });
-
-        socketRef.current.on('audio_chunk', processAudioChunk);
-
-        socketRef.current.on('error', (error) => {
-          setError('Ошибка подключения к радио');
-          console.error('Socket error:', error);
-          disconnectFromRadio();
-        });
-
+        initializeHLS();
+        await audioRef.current.play();
+        setIsConnected(true);
+        setError(null);
       } else {
         disconnectFromRadio();
       }
@@ -180,44 +82,20 @@ function Radio() {
   };
 
   const disconnectFromRadio = () => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
-
-    if (schedulerIntervalRef.current) {
-      clearInterval(schedulerIntervalRef.current);
-      schedulerIntervalRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
     }
-
-    audioBufferQueueRef.current = [];
-    nextPlayTimeRef.current = audioContextRef.current.currentTime;
     setIsConnected(false);
   };
 
-  // Добавляем обработчик для автоматического возобновления AudioContext
-  useEffect(() => {
-    const handleUserInteraction = async () => {
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        try {
-          await audioContextRef.current.resume();
-        } catch (error) {
-          console.error('Error resuming AudioContext:', error);
-        }
-      }
-    };
-
-    window.addEventListener('click', handleUserInteraction);
-    window.addEventListener('touchstart', handleUserInteraction);
-
-    return () => {
-      window.removeEventListener('click', handleUserInteraction);
-      window.removeEventListener('touchstart', handleUserInteraction);
-    };
-  }, []);
-
   return (
     <div className="radio-container">
+      <audio ref={audioRef} />
       <div className="radio-wave-animation" />
       <div className="radio-player">
         <div className="radio-status">

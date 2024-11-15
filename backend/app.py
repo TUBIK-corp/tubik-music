@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
+import m3u8
 from flask_socketio import SocketIO, emit
 import json
 import hashlib
@@ -32,82 +33,62 @@ IMAGES_FOLDER = 'data/images'
 TRACKS_FILE = 'data/tracks.json'
 ADMIN_HASH = hashlib.sha256('tubik123'.encode()).hexdigest()
 DEFAULT_IMAGE = 'default.jpg'
+
+HLS_SEGMENT_LENGTH = 10  # длина сегмента в секундах
+HLS_SEGMENTS_DIR = 'data/hls'
+HLS_PLAYLIST_FILE = 'playlist.m3u8'
+FFMPEG_BITRATE = '128k'
+
 # Create folders if they don't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(IMAGES_FOLDER, exist_ok=True)
+os.makedirs(HLS_SEGMENTS_DIR, exist_ok=True)
 
-class AudioPlayer:
-    def __init__(self):
-        self.current_segment = None
-        self.position = 0
-        self.is_playing = False
-        self.current_track_info = None
-        self.chunk_duration = 1  # 10 секунд аудио
-        self.sample_rate = 44100
-        self.channels = 2
-
-    def load_track(self, track_path, track_info):
-        try:
-            audio = AudioSegment.from_file(track_path)
-            self.sample_rate = audio.frame_rate
-            self.channels = audio.channels
-            self.current_segment = audio
-            self.position = 0
-            self.current_track_info = track_info
-            return True
-        except Exception as e:
-            print(f"Error loading track: {e}")
-            return False
-        
-    def get_next_chunk(self):
-        if not self.current_segment:
-            print("No current segment loaded")
-            return None
-
-        chunk_length = int(self.chunk_duration * 1000)
-        start_ms = int(self.position * 1000)
-        end_ms = start_ms + chunk_length
-
-        if start_ms >= len(self.current_segment):
-            print("Reached end of current segment")
-            return None
-
-        chunk = self.current_segment[start_ms:end_ms]
-        if len(chunk) < chunk_length:
-            print(f"Chunk too short: {len(chunk)}ms < {chunk_length}ms")
-            return None
-
-        self.position += self.chunk_duration
-        return chunk
-
-    def reset(self):
-        self.current_segment = None
-        self.position = 0
-        self.current_track_info = None
 
 class RadioStream:
     def __init__(self):
-        self.clients = set()
+        self.current_track_info = None
         self.played_tracks = set()
-        self.current_thread = None
-        self.player = AudioPlayer()
         self.is_running = False
-        self.buffer_thread = None
-        self.send_interval = 0.5  # 2 пакета в секунду
-        self.last_send_time = 0
-        self.send_queue = queue.Queue()
-        self.chunk_interval = 1
+        self.current_process = None
+        self.playlist = []
+        self.segment_count = 0
+        
+    def start_streaming(self):
+        self.is_running = True
+        threading.Thread(target=self._stream_manager).start()
 
-    def fill_buffer(self):
-        while not self.player.buffer.full():
-            chunk = self.player.get_next_chunk()
-            if chunk is None:
-                return False
-            self.player.buffer.put(chunk)
-        return True
+    def _stream_manager(self):
+        while self.is_running:
+            if not self.current_process or self.current_process.poll() is not None:
+                track_path, track_info = self.get_random_track()
+                if track_path:
+                    self.current_track_info = track_info
+                    self._start_ffmpeg_stream(track_path)
+            time.sleep(1)
+
+    def _start_ffmpeg_stream(self, input_file):
+        if self.current_process:
+            self.current_process.terminate()
+            
+        output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
+        playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+        
+        command = [
+            'ffmpeg', '-re', '-i', input_file,
+            '-c:a', 'aac', '-b:a', FFMPEG_BITRATE,
+            '-f', 'hls',
+            '-hls_time', str(HLS_SEGMENT_LENGTH),
+            '-hls_list_size', '6',
+            '-hls_flags', 'delete_segments',
+            '-hls_segment_filename', output_pattern,
+            playlist_path
+        ]
+        
+        self.current_process = subprocess.Popen(command)
 
     def get_random_track(self):
-        """Выбирает случайный трек из доступных"""
+        # Оставляем текущую логику выбора случайного трека
         tracks = load_tracks()
         if not tracks:
             return None, None
@@ -121,81 +102,30 @@ class RadioStream:
         self.played_tracks.add(track['id'])
         track_path = f"{UPLOAD_FOLDER}/{track['id']}.mp3"
         
-        # Проверяем существование файла
         if not os.path.exists(track_path):
-            print(f"Track file not found: {track_path}")
             return None, None
             
         return track_path, track
 
+radio = RadioStream()
 
-    def notify_track_change(self):
-        """Уведомляет клиентов о смене трека"""
-        if self.player.current_track_info:
-            socketio.emit('track_change', self.player.current_track_info)
+@app.route('/api/radio/stream/playlist.m3u8')
+def get_playlist():
+    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+    if os.path.exists(playlist_path):
+        return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
+    return '', 404
 
-    def notify_listeners_count(self):
-        """Уведомляет о количестве слушателей"""
-        socketio.emit('listeners_update', len(self.clients))
+@app.route('/api/radio/stream/<segment>')
+def get_segment(segment):
+    segment_path = f"{HLS_SEGMENTS_DIR}/{segment}"
+    if os.path.exists(segment_path):
+        return send_file(segment_path, mimetype='video/MP2T')
+    return '', 404
 
-    def stream_audio(self):
-        self.is_running = True
-        next_send_time = time.time()
-
-        while self.is_running and self.clients:
-            current_time = time.time()
-
-            if current_time >= next_send_time:
-                chunk = self.player.get_next_chunk()
-                if chunk is None:
-                    print("End of track or no audio data available")
-                    self.player.reset()
-                    track_path, track_info = self.get_random_track()
-                    if track_path and self.player.load_track(track_path, track_info):
-                        self.notify_track_change()
-                        print(f"Loaded new track: {track_info['title']}")
-                    else:
-                        print("Failed to load new track, waiting before retry")
-                        time.sleep(1)
-                    next_send_time = time.time() + self.chunk_interval
-                    continue
-
-                try:
-                    audio_data = {
-                        'data': chunk.raw_data.hex(),
-                        'sample_rate': self.player.sample_rate,
-                        'channels': self.player.channels,
-                        'duration': self.player.chunk_duration
-                    }
-                    socketio.emit('audio_chunk', audio_data)
-                    print(f"Sent 1-second audio chunk. Track: {self.player.current_track_info['title']}")
-                    next_send_time += self.chunk_interval
-                except Exception as e:
-                    print(f"Error sending audio chunk: {e}")
-                    next_send_time = time.time() + self.chunk_interval
-                    continue
-            else:
-                time.sleep(0.01)  # Короткая пауза для экономии ресурсов
-
-        print("Streaming stopped")
-
-
-    def get_initial_chunks(self, count=5):
-        chunks = []
-        for _ in range(count):
-            chunk = self.player.get_next_chunk()
-            if chunk is None:
-                break
-            chunks.append(chunk)
-        return chunks
-
-    def cleanup(self):
-        self.is_running = False
-        if self.current_thread:
-            self.current_thread.join()
-        self.player.reset()
-
-
+@app.route('/api/radio/current', methods=['GET'])
+def get_current_track():
+    return jsonify(radio.current_track_info)
 
 def cleanup_resources():
     radio.cleanup()
@@ -348,4 +278,5 @@ import atexit
 atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000)
+    radio.start_streaming()
+    app.run(host='0.0.0.0', port=5000)
