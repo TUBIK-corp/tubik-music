@@ -5,25 +5,32 @@ function Radio() {
   const [isConnected, setIsConnected] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [error, setError] = useState(null);
-  const [listeners, setListeners] = useState(0);
+  const [radioStatus, setRadioStatus] = useState(null);
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
   useEffect(() => {
-    fetchCurrentTrack();
-    const interval = setInterval(fetchCurrentTrack, 5000);
+    checkRadioStatus();
+    const interval = setInterval(checkRadioStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const fetchCurrentTrack = async () => {
+  const checkRadioStatus = async () => {
     try {
-      const response = await fetch('/api/radio/current');
-      if (!response.ok) throw new Error('Failed to fetch current track');
-      const data = await response.json();
-      setCurrentTrack(data);
+      const response = await fetch('/api/radio/status');
+      if (!response.ok) throw new Error('Failed to fetch radio status');
+      const status = await response.json();
+      setRadioStatus(status);
+      setCurrentTrack(status.current_track);
+      
+      if (!status.has_tracks) {
+        setError('Нет доступных треков. Загрузите хотя бы один трек.');
+      } else {
+        setError(null);
+      }
     } catch (err) {
-      setError('Не удалось получить информацию о текущем треке');
+      setError('Не удалось получить статус радио');
       console.error(err);
     }
   };
@@ -41,7 +48,7 @@ function Radio() {
 
       hlsRef.current.attachMedia(audioRef.current);
       hlsRef.current.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hlsRef.current.loadSource('/api/radio/stream/playlist.m3u8');
+        hlsRef.current.loadSource('/api/radio/hls/playlist.m3u8');
       });
 
       hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
@@ -60,13 +67,17 @@ function Radio() {
         }
       });
     } else if (audioRef.current.canPlayType('application/vnd.apple.mpegurl')) {
-      // Для Safari, который имеет встроенную поддержку HLS
-      audioRef.current.src = '/api/radio/stream/playlist.m3u8';
+      audioRef.current.src = '/api/radio/hls/playlist.m3u8';
     }
   };
 
   const connectToRadio = async () => {
     try {
+      if (!radioStatus?.has_tracks) {
+        setError('Нет доступных треков. Загрузите хотя бы один трек.');
+        return;
+      }
+
       if (!isConnected) {
         initializeHLS();
         await audioRef.current.play();
@@ -95,13 +106,13 @@ function Radio() {
 
   return (
     <div className="radio-container">
-      <audio ref={audioRef} />
       <div className="radio-wave-animation" />
       <div className="radio-player">
+        <audio ref={audioRef} />
+        
         <div className="radio-status">
           <div className={`status-dot ${isConnected ? 'connected' : ''}`} />
           <span>{isConnected ? 'В эфире' : 'Не подключено'}</span>
-          {isConnected && <span className="listeners-count">Слушателей: {listeners}</span>}
         </div>
 
         <div className="radio-image-container">
@@ -134,7 +145,7 @@ function Radio() {
           <button 
             className={`radio-btn ${isConnected ? 'connected' : ''}`}
             onClick={connectToRadio}
-            disabled={!!error}
+            disabled={!radioStatus?.has_tracks}
           >
             {isConnected ? 'Отключиться' : 'Подключиться'}
           </button>

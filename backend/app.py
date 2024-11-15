@@ -56,10 +56,20 @@ class RadioStream:
         self.current_process = None
         self.playlist = []
         self.segment_count = 0
+        self._stream_thread = None
         
     def start_streaming(self):
-        self.is_running = True
-        threading.Thread(target=self._stream_manager).start()
+        if not self.is_running and self._has_tracks():
+            self.is_running = True
+            self._stream_thread = threading.Thread(target=self._stream_manager)
+            self._stream_thread.daemon = True
+            self._stream_thread.start()
+            return True
+        return False
+
+    def _has_tracks(self):
+        tracks = load_tracks()
+        return len(tracks) > 0
 
     def _stream_manager(self):
         while self.is_running:
@@ -68,11 +78,22 @@ class RadioStream:
                 if track_path:
                     self.current_track_info = track_info
                     self._start_ffmpeg_stream(track_path)
+                else:
+                    # Если нет треков, ждем немного и проверяем снова
+                    time.sleep(5)
+                    if not self._has_tracks():
+                        self.is_running = False
+                        break
             time.sleep(1)
 
     def _start_ffmpeg_stream(self, input_file):
         if self.current_process:
             self.current_process.terminate()
+            
+        # Очищаем старые сегменты
+        for file in os.listdir(HLS_SEGMENTS_DIR):
+            if file.endswith('.ts'):
+                os.remove(os.path.join(HLS_SEGMENTS_DIR, file))
             
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
         playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
@@ -83,18 +104,24 @@ class RadioStream:
             '-f', 'hls',
             '-hls_time', str(HLS_SEGMENT_LENGTH),
             '-hls_list_size', '6',
-            '-hls_flags', 'delete_segments',
+            '-hls_flags', 'delete_segments+append_list',
             '-hls_segment_filename', output_pattern,
             playlist_path
         ]
         
-        self.current_process = subprocess.Popen(command)
+        try:
+            self.current_process = subprocess.Popen(command)
+        except Exception as e:
+            print(f"Error starting FFmpeg: {e}")
+            self.current_process = None
 
     def get_random_track(self):
-        # Оставляем текущую логику выбора случайного трека
         tracks = load_tracks()
         if not tracks:
             return None, None
+
+        if not self.played_tracks or len(self.played_tracks) >= len(tracks):
+            self.played_tracks.clear()
 
         available_tracks = [t for t in tracks if t['id'] not in self.played_tracks]
         if not available_tracks:
@@ -110,45 +137,58 @@ class RadioStream:
             
         return track_path, track
 
+    def stop_streaming(self):
+        self.is_running = False
+        if self.current_process:
+            self.current_process.terminate()
+            self.current_process = None
+        if self._stream_thread:
+            self._stream_thread.join(timeout=1)
+            self._stream_thread = None
+
 radio = RadioStream()
 
-@app.route('/api/radio/stream/playlist.m3u8')
-def get_playlist():
-    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
-    if os.path.exists(playlist_path):
-        return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
-    return '', 404
 
-@app.route('/api/radio/stream/<segment>')
-def get_segment(segment):
-    segment_path = f"{HLS_SEGMENTS_DIR}/{segment}"
-    if os.path.exists(segment_path):
-        return send_file(segment_path, mimetype='video/MP2T')
-    return '', 404
-
-@app.route('/api/radio/current', methods=['GET'])
-def get_current_track():
-    return jsonify(radio.current_track_info)
 
 def cleanup_resources():
     radio.cleanup()
     
 def load_tracks():
-    """Загружает список треков из файла"""
     if os.path.exists(TRACKS_FILE):
         with open(TRACKS_FILE, 'r') as f:
             return json.load(f)
     return []
 
 def save_tracks(tracks):
-    """Сохраняет список треков в файл"""
     with open(TRACKS_FILE, 'w') as f:
         json.dump(tracks, f)
 
-# API Routes
+
+@app.route('/api/radio/hls/playlist.m3u8')
+def get_hls_playlist():
+    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+    if os.path.exists(playlist_path):
+        return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
+    return '', 404
+
+@app.route('/api/radio/hls/<segment>')
+def get_hls_segment(segment):
+    segment_path = f"{HLS_SEGMENTS_DIR}/{segment}"
+    if os.path.exists(segment_path):
+        return send_file(segment_path, mimetype='video/MP2T')
+    return '', 404
+
+@app.route('/api/radio/status')
+def get_radio_status():
+    return jsonify({
+        'is_running': radio.is_running,
+        'has_tracks': radio._has_tracks(),
+        'current_track': radio.current_track_info
+    })
+
 @app.route('/api/radio/current', methods=['GET'])
 def get_current_track():
-    return jsonify(radio.player.current_track_info)
+    return jsonify(radio.current_track_info)
 
 @app.route('/api/radio/listeners', methods=['GET'])
 def get_listeners_count():
@@ -209,6 +249,11 @@ def upload_track():
         'imageUrl': f'/api/images/{image_filename}' if image_filename else f'/api/images/{DEFAULT_IMAGE}'
     })
     save_tracks(tracks)
+
+    # Если это первый трек и радио не запущено, запускаем его
+    if len(tracks) == 1 and not radio.is_running:
+        radio.start_streaming()
+
     return jsonify({'success': True})
 
 # WebSocket Events
