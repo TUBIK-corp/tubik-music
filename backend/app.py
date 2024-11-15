@@ -15,15 +15,6 @@ import time
 import queue
 
 app = Flask(__name__)
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    async_mode='gevent',
-    ping_timeout=60,
-    ping_interval=25,
-    logger=False,
-    engineio_logger=False
-)
 
 # Constants
 SAMPLE_RATE = 44100
@@ -276,70 +267,11 @@ def upload_track():
 
     return jsonify({'success': True})
 
-# WebSocket Events
+def cleanup_resources():
+    radio.stop_streaming()
+
 radio = RadioStream()
 
-
-@socketio.on('connect')
-def handle_connect():
-    radio.clients.add(request.sid)
-    print(f"Client connected. Total clients: {len(radio.clients)}")
-    
-    if len(radio.clients) == 1:
-        radio.current_thread = threading.Thread(target=radio.stream_audio)
-        radio.current_thread.start()
-    
-    # Отправка начальных 5 секунд аудио
-    initial_chunks = radio.get_initial_chunks(5)
-    combined_chunk = AudioSegment.empty()
-    for chunk in initial_chunks:
-        combined_chunk += chunk
-
-    if len(combined_chunk) > 0:
-        audio_data = {
-            'data': combined_chunk.raw_data.hex(),
-            'sample_rate': radio.player.sample_rate,
-            'channels': radio.player.channels,
-            'duration': len(combined_chunk) / 1000  # длительность в секундах
-        }
-        emit('initial_audio_chunk', audio_data)
-    
-    radio.notify_listeners_count()
-    if radio.player.current_track_info:
-        emit('track_change', radio.player.current_track_info)
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    if request.sid in radio.clients:
-        radio.clients.remove(request.sid)
-    print(f"Client disconnected. Total clients: {len(radio.clients)}")
-    
-    if len(radio.clients) == 0:
-        radio.is_running = False
-        if radio.current_thread:
-            radio.current_thread.join()
-        radio.player.reset()
-    
-    radio.notify_listeners_count()
-
-# Дополнительные функции управления радио
-@socketio.on('skip_track')
-def handle_skip_track():
-    """Пропуск текущего трека"""
-    radio.player.reset()
-
-@socketio.on('volume_change')
-def handle_volume_change(data):
-    """Изменение громкости (если необходимо)"""
-    volume = float(data.get('volume', 1.0))
-    # Можно добавить логику изменения громкости
-
-def cleanup_resources():
-    """Очистка ресурсов при завершении работы"""
-    radio.is_running = False
-    if radio.current_thread:
-        radio.current_thread.join()
-    radio.player.reset()
 
 # Обработчик для корректного завершения работы
 import atexit
