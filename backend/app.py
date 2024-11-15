@@ -52,14 +52,7 @@ class RadioStream:
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
             self.is_running = True
-            # Инициализируем текущий трек перед запуском потока
-            track_path, track_info = self.get_random_track()
-            if track_path and track_info:
-                self.current_track_info = track_info
-                self._start_ffmpeg_stream(track_path)
-            self._stream_thread = threading.Thread(target=self._stream_manager)
-            self._stream_thread.daemon = True
-            self._stream_thread.start()
+            threading.Thread(target=self._stream_manager).start()
             return True
         return False
 
@@ -73,9 +66,9 @@ class RadioStream:
                 track_path, track_info = self.get_random_track()
                 if track_path:
                     self.current_track_info = track_info
+                    self.current_track_version += 1
                     self._start_ffmpeg_stream(track_path)
                 else:
-                    # Если нет треков, ждем немного и проверяем снова
                     time.sleep(5)
                     if not self._has_tracks():
                         self.is_running = False
@@ -85,18 +78,9 @@ class RadioStream:
     def _start_ffmpeg_stream(self, input_file):
         if self.current_process:
             self.current_process.terminate()
-            time.sleep(0.5)
-            
-        # Очищаем старые сегменты
-        try:
-            for file in os.listdir(HLS_SEGMENTS_DIR):
-                if file.endswith('.ts') or file == HLS_PLAYLIST_FILE:
-                    os.remove(os.path.join(HLS_SEGMENTS_DIR, file))
-        except Exception as e:
-            print(f"Error cleaning HLS directory: {e}")
             
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
-        playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+        playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{self.current_track_version}.m3u8"
         
         command = [
             'ffmpeg', '-re', '-i', input_file,
@@ -104,17 +88,12 @@ class RadioStream:
             '-f', 'hls',
             '-hls_time', str(HLS_SEGMENT_LENGTH),
             '-hls_list_size', '6',
-            '-hls_flags', 'delete_segments+append_list+omit_endlist',  # Добавляем omit_endlist
+            '-hls_flags', 'delete_segments+append_list',
             '-hls_segment_filename', output_pattern,
             playlist_path
         ]
         
-        try:
-            self.current_process = subprocess.Popen(command)
-            self.current_track_version += 1  # Увеличиваем версию при смене трека
-        except Exception as e:
-            print(f"Error starting FFmpeg: {e}")
-            self.current_process = None
+        self.current_process = subprocess.Popen(command)
             
     def get_random_track(self):
         tracks = load_tracks()
@@ -167,8 +146,8 @@ def save_tracks(tracks):
 
 
 @app.route('/api/radio/hls/playlist.m3u8')
-def get_hls_playlist():
-    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+def get_playlist():
+    playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{radio.current_track_version}.m3u8"
     if os.path.exists(playlist_path):
         return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
     return '', 404
@@ -185,10 +164,8 @@ def get_radio_status():
     return jsonify({
         'is_running': radio.is_running,
         'has_tracks': radio._has_tracks(),
-        'current_track': {
-            **radio.current_track_info,
-            'version': radio.current_track_version  # Добавляем версию трека
-        } if radio.current_track_info else None
+        'current_track': radio.current_track_info,
+        'current_track_version': radio.current_track_version
     })
 
 @app.route('/api/radio/current', methods=['GET'])
@@ -261,7 +238,6 @@ def upload_track():
 
     return jsonify({'success': True})
 
-# WebSocket Events
 radio = RadioStream()
 
 
@@ -274,5 +250,7 @@ import atexit
 atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
-    radio.start_streaming()
+    if radio._has_tracks():
+        radio.start_streaming()
+        time.sleep(2)
     app.run(host='0.0.0.0', port=5000)

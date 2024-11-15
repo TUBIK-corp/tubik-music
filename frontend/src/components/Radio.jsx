@@ -9,6 +9,7 @@ function Radio() {
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
   const statusCheckInterval = useRef(null);
+  const [currentTrackVersion, setCurrentTrackVersion] = useState(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
   useEffect(() => {
@@ -28,9 +29,10 @@ function Radio() {
       if (!response.ok) throw new Error('Failed to fetch radio status');
       const status = await response.json();
       
-      // Если трек изменился, переподключаем HLS
-      if (isConnected && status.current_track?.id !== currentTrack?.id) {
-        console.log('Track changed, reconnecting HLS...');
+      // Если версия трека изменилась, переподключаем HLS
+      if (isConnected && status.current_track_version !== currentTrackVersion) {
+        console.log('Track version changed, reconnecting HLS...');
+        setCurrentTrackVersion(status.current_track_version);
         reinitializeHLS();
       }
       
@@ -47,7 +49,6 @@ function Radio() {
       setError('Не удалось получить статус радио');
     }
   };
-
   const reinitializeHLS = () => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -74,7 +75,7 @@ function Radio() {
 
       hlsRef.current.attachMedia(audioRef.current);
       hlsRef.current.on(Hls.Events.MEDIA_ATTACHED, () => {
-        hlsRef.current.loadSource('/api/radio/hls/playlist.m3u8');
+        hlsRef.current.loadSource(`/api/radio/hls/playlist.m3u8?v=${currentTrackVersion}`);
       });
 
       hlsRef.current.on(Hls.Events.ERROR, (event, data) => {
