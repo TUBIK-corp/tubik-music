@@ -44,13 +44,14 @@ class RadioStream:
         self.played_tracks = set()
         self.is_running = False
         self.current_process = None
-        self.playlist = []
-        self.segment_count = 0
+        self.playlist_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt')
+        self.playlist_update_event = threading.Event()
         
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
             self.is_running = True
             threading.Thread(target=self._stream_manager).start()
+            threading.Thread(target=self._playlist_updater).start()
             return True
         return False
 
@@ -62,21 +63,14 @@ class RadioStream:
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
         playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
         
-        while self.is_running:
-            track_path, track_info = self.get_random_track()
-            if track_path:
-                self.current_track_info = track_info
-                self._stream_track(track_path, output_pattern, playlist_path)
-            else:
-                time.sleep(5)
-                if not self._has_tracks():
-                    self.is_running = False
-                    break
-
-    def _stream_track(self, input_file, output_pattern, playlist_path):
         command = [
-            'ffmpeg', '-re', '-i', input_file,
-            '-c:a', 'aac', '-b:a', FFMPEG_BITRATE,
+            'ffmpeg',
+            '-re',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', self.playlist_file.name,
+            '-c:a', 'aac',
+            '-b:a', FFMPEG_BITRATE,
             '-f', 'hls',
             '-hls_time', str(HLS_SEGMENT_LENGTH),
             '-hls_list_size', '10',
@@ -85,40 +79,32 @@ class RadioStream:
             playlist_path
         ]
         
-        process = subprocess.Popen(command)
-        process.wait()
-            
-    def get_random_track(self):
-        tracks = load_tracks()
-        if not tracks:
-            return None, None
+        while self.is_running:
+            self.current_process = subprocess.Popen(command)
+            self.current_process.wait()
 
-        if len(self.played_tracks) >= len(tracks):
-            self.played_tracks.clear()
+    def _playlist_updater(self):
+        while self.is_running:
+            tracks = load_tracks()
+            random.shuffle(tracks)
+            self.playlist_file.seek(0)
+            self.playlist_file.truncate()
+            for track in tracks:
+                track_path = f"{UPLOAD_FOLDER}/{track['id']}.mp3"
+                self.playlist_file.write(f"file '{track_path}'\n")
+            self.playlist_file.flush()
+            self.current_track_info = tracks[0] if tracks else None
+            self.playlist_update_event.set()
+            time.sleep(60)  # Обновляем плейлист каждую минуту
 
-        available_tracks = [t for t in tracks if t['id'] not in self.played_tracks]
-        if not available_tracks:
-            self.played_tracks.clear()
-            available_tracks = tracks
-
-        track = random.choice(available_tracks)
-        self.played_tracks.add(track['id'])
-        track_path = f"{UPLOAD_FOLDER}/{track['id']}.mp3"
-        
-        if not os.path.exists(track_path):
-            print(f"Track file not found: {track_path}")
-            return None, None
-            
-        return track_path, track
+    def get_current_track(self):
+        return self.current_track_info
 
     def stop_streaming(self):
         self.is_running = False
         if self.current_process:
             self.current_process.terminate()
-            self.current_process = None
-        if self._stream_thread:
-            self._stream_thread.join(timeout=1)
-            self._stream_thread = None
+        os.unlink(self.playlist_file.name)
 
 radio = RadioStream()
 
