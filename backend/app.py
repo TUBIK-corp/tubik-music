@@ -269,4 +269,8 @@ import atexit
 atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
+    tracks = load_tracks()
+    track_id = str(len(tracks) + 1)
+    if len(tracks) == 1 and not radio.is_running:
+        radio.start_streaming()
     app.run(host='0.0.0.0', port=5000)
