@@ -152,8 +152,8 @@ def get_playlist():
     version = request.args.get('v', radio.current_track_version)
     playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{version}.m3u8"
     
-    # Ждем, пока плейлист не будет создан (максимум 5 секунд)
-    for _ in range(10):
+    # Ждем, пока плейлист не будет создан (максимум 15 секунд)
+    for _ in range(30):
         if os.path.exists(playlist_path):
             return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
         time.sleep(0.5)
