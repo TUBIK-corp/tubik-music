@@ -52,6 +52,11 @@ class RadioStream:
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
             self.is_running = True
+            # Инициализируем текущий трек перед запуском потока
+            track_path, track_info = self.get_random_track()
+            if track_path and track_info:
+                self.current_track_info = track_info
+                self._start_ffmpeg_stream(track_path)
             self._stream_thread = threading.Thread(target=self._stream_manager)
             self._stream_thread.daemon = True
             self._stream_thread.start()
