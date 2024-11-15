@@ -46,8 +46,6 @@ class RadioStream:
         self.current_process = None
         self.playlist = []
         self.segment_count = 0
-        self._stream_thread = None
-        self.current_track_version = 0 
         
     def start_streaming(self):
         if not self.is_running and self._has_tracks():
@@ -61,41 +59,34 @@ class RadioStream:
         return len(tracks) > 0
 
     def _stream_manager(self):
-        while self.is_running:
-            if not self.current_process or self.current_process.poll() is not None:
-                track_path, track_info = self.get_random_track()
-                if track_path:
-                    self.current_track_info = track_info
-                    self.current_track_version += 1
-                    self._start_ffmpeg_stream(track_path)
-                else:
-                    time.sleep(5)
-                    if not self._has_tracks():
-                        self.is_running = False
-                        break
-            time.sleep(1)
-
-    def _start_ffmpeg_stream(self, input_file):
-        if self.current_process:
-            self.current_process.terminate()
-            time.sleep(1)
-            
-        self.current_track_version += 1
         output_pattern = f"{HLS_SEGMENTS_DIR}/segment_%03d.ts"
-        playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{self.current_track_version}.m3u8"
+        playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
         
+        while self.is_running:
+            track_path, track_info = self.get_random_track()
+            if track_path:
+                self.current_track_info = track_info
+                self._stream_track(track_path, output_pattern, playlist_path)
+            else:
+                time.sleep(5)
+                if not self._has_tracks():
+                    self.is_running = False
+                    break
+
+    def _stream_track(self, input_file, output_pattern, playlist_path):
         command = [
             'ffmpeg', '-re', '-i', input_file,
             '-c:a', 'aac', '-b:a', FFMPEG_BITRATE,
             '-f', 'hls',
             '-hls_time', str(HLS_SEGMENT_LENGTH),
-            '-hls_list_size', '6',
+            '-hls_list_size', '10',
             '-hls_flags', 'delete_segments+append_list',
             '-hls_segment_filename', output_pattern,
             playlist_path
         ]
         
-        self.current_process = subprocess.Popen(command)
+        process = subprocess.Popen(command)
+        process.wait()
             
     def get_random_track(self):
         tracks = load_tracks()
@@ -149,19 +140,13 @@ def save_tracks(tracks):
 
 @app.route('/api/radio/hls/playlist.m3u8')
 def get_playlist():
-    version = request.args.get('v', radio.current_track_version)
-    playlist_path = f"{HLS_SEGMENTS_DIR}/playlist_{version}.m3u8"
-    
-    # Ждем, пока плейлист не будет создан (максимум 15 секунд)
-    for _ in range(30):
-        if os.path.exists(playlist_path):
-            return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
-        time.sleep(0.5)
-    
+    playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
+    if os.path.exists(playlist_path):
+        return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
     return '', 404
 
 @app.route('/api/radio/hls/<segment>')
-def get_hls_segment(segment):
+def get_segment(segment):
     segment_path = f"{HLS_SEGMENTS_DIR}/{segment}"
     if os.path.exists(segment_path):
         return send_file(segment_path, mimetype='video/MP2T')
@@ -172,8 +157,7 @@ def get_radio_status():
     return jsonify({
         'is_running': radio.is_running,
         'has_tracks': radio._has_tracks(),
-        'current_track': radio.current_track_info,
-        'current_track_version': radio.current_track_version
+        'current_track': radio.current_track_info
     })
 
 @app.route('/api/radio/current', methods=['GET'])

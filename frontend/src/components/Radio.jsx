@@ -9,7 +9,6 @@ function Radio() {
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
   const statusCheckInterval = useRef(null);
-  const [currentTrackVersion, setCurrentTrackVersion] = useState(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
   useEffect(() => {
@@ -28,12 +27,6 @@ function Radio() {
       const response = await fetch('/api/radio/status');
       if (!response.ok) throw new Error('Failed to fetch radio status');
       const status = await response.json();
-      
-      if (isConnected && status.current_track_version !== currentTrackVersion) {
-        console.log('Track version changed, reconnecting HLS...');
-        setCurrentTrackVersion(status.current_track_version);
-        setTimeout(() => reinitializeHLS(status.current_track_version), 2000);
-      }
       
       setRadioStatus(status);
       setCurrentTrack(status.current_track);
@@ -57,27 +50,16 @@ function Radio() {
     initializeHLS(version);
   };
 
-  const initializeHLS = (version) => {
+  const initializeHLS = () => {
     if (Hls.isSupported()) {
       hlsRef.current = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 3,
-        manifestLoadingRetryDelay: 500,
-        levelLoadingTimeOut: 10000,
-        levelLoadingMaxRetry: 3,
-        levelLoadingRetryDelay: 500,
-        fragLoadingTimeOut: 10000,
-        fragLoadingMaxRetry: 3,
-        fragLoadingRetryDelay: 500,
       });
 
       hlsRef.current.attachMedia(audioRef.current);
       hlsRef.current.on(Hls.Events.MEDIA_ATTACHED, () => {
-        const playlistUrl = `/api/radio/hls/playlist.m3u8?v=${version}`;
-        console.log('Loading playlist:', playlistUrl);
-        hlsRef.current.loadSource(playlistUrl);
+        hlsRef.current.loadSource('/api/radio/hls/playlist.m3u8');
       });
 
       hlsRef.current.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -98,17 +80,12 @@ function Radio() {
               break;
             default:
               console.log('Fatal error, reconnecting...');
-              reinitializeHLS();
+              disconnectFromRadio();
+              connectToRadio();
               break;
           }
         }
       });
-
-      hlsRef.current.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('HLS manifest parsed, starting playback...');
-        audioRef.current.play().catch(console.error);
-      });
-
     } else if (audioRef.current.canPlayType('application/vnd.apple.mpegurl')) {
       audioRef.current.src = '/api/radio/hls/playlist.m3u8';
     }
@@ -122,7 +99,7 @@ function Radio() {
       }
 
       if (!isConnected) {
-        initializeHLS(radioStatus.current_track_version);
+        initializeHLS();
         setIsConnected(true);
         setError(null);
       } else {
@@ -145,6 +122,7 @@ function Radio() {
     }
     setIsConnected(false);
   };
+
 
   // Добавляем обработчик ошибок воспроизведения
   useEffect(() => {
