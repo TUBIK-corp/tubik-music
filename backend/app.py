@@ -326,5 +326,4 @@ import atexit
 atexit.register(cleanup_resources)
 
 if __name__ == '__main__':
-    radio.start_streaming()
     app.run(host='0.0.0.0', port=5000)
