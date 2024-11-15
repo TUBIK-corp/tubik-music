@@ -7,4 +7,6 @@ gevent
 gevent-websocket
 python-socketio
 eventlet
+m3u8
+pathlib
 pydub

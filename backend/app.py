@@ -6,6 +6,9 @@ import hashlib
 import os
 import random
 import threading
+from pathlib import Path
+import subprocess
+import shutil
 from pydub import AudioSegment
 from pydub.utils import make_chunks
 from werkzeug.utils import secure_filename
