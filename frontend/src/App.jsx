@@ -19,7 +19,7 @@ function AppContent() {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch('/api/auth/check', {
+      const response = await fetch('https://auth.tubik-corp.ru/api/auth/check', {
         credentials: 'include'
       })
       setIsAuthorized(response.status === 200)

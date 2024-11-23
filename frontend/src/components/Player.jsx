@@ -28,15 +28,15 @@ function Player() {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch('https://auth.tubik-corp.ru/api/auth/check', {
-        credentials: 'include' // важно для отправки cookies
+      const response = await fetch('/api/proxy/auth/check', {
+        credentials: 'include'
       });
       return response.status === 200;
     } catch (err) {
       console.error('Auth check error:', err);
       return false;
     }
-  };
+};
 
   const redirectToAuth = () => {
     const params = new URLSearchParams({
@@ -119,7 +119,7 @@ function Player() {
 
   const handleTrackClick = async (track) => {
     const isAuth = await checkAuth();
-    
+    alert(isAuth)
     if (!isAuth) {
       redirectToAuth();
       return;

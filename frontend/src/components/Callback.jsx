@@ -11,16 +11,16 @@ function Callback() {
       const code = params.get('code');
       
       try {
-        const response = await fetch('https://auth.tubik-corp.ru/api/auth/code-exchange', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ClientId: 'your_client_id',
-            ClientSecret: 'your_client_secret',
-            TempCode: code
-          })
+        const response = await fetch('/api/proxy/auth/code-exchange', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                ClientId: 'your_client_id',
+                ClientSecret: 'your_client_secret',
+                TempCode: code
+            })
         });
         
         if (response.ok) {

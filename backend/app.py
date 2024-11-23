@@ -201,6 +201,29 @@ def get_image(filename):
     except:
         return send_file(f'{IMAGES_FOLDER}/{DEFAULT_IMAGE}')
 
+@app.route('/api/proxy/auth/check', methods=['GET'])
+def proxy_auth_check():
+    token = request.cookies.get('jwt')
+    if not token:
+        return '', 401
+        
+    headers = {'Cookie': f'jwt={token}'}
+    try:
+        response = requests.get('https://auth.tubik-corp.ru/api/auth/check', headers=headers)
+        return '', response.status_code
+    except:
+        return '', 500
+    
+@app.route('/api/proxy/auth/code-exchange', methods=['POST'])
+def proxy_code_exchange():
+    try:
+        response = requests.post(
+            'https://auth.tubik-corp.ru/api/auth/code-exchange',
+            json=request.json
+        )
+        return response.text, response.status_code
+    except:
+        return '', 500
 
 @app.route('/api/login', methods=['POST'])
 def login():
