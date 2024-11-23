@@ -10,8 +10,10 @@ function Radio() {
   const hlsRef = useRef(null);
   const statusCheckInterval = useRef(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
+    checkAuth();
     checkRadioStatus();
     statusCheckInterval.current = setInterval(checkRadioStatus, 5000);
     return () => {
@@ -21,6 +23,30 @@ function Radio() {
       disconnectFromRadio();
     };
   }, []);
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/auth/check', {
+        credentials: 'include' // важно для отправки cookies
+      });
+      setIsAuthorized(response.status === 200);
+    } catch (err) {
+      console.error('Auth check error:', err);
+      setIsAuthorized(false);
+    }
+  };
+
+
+  const handleUnauthorized = () => {
+    // Редирект на SSO auth
+    const params = new URLSearchParams({
+      client_id: 'your_client_id',
+      redirect_uri: window.location.origin + '/callback',
+      state: Math.random().toString(36).substring(7),
+      response_type: 'code'
+    });
+    window.location.href = `https://auth.tubik-corp.ru/login?${params}`;
+  };
 
   const checkRadioStatus = async () => {
     try {
@@ -92,6 +118,11 @@ function Radio() {
   };
 
   const connectToRadio = async () => {
+    if (!isAuthorized) {
+      handleUnauthorized();
+      return;
+    }
+
     try {
       if (!radioStatus?.has_tracks) {
         setError('Нет доступных треков. Загрузите хотя бы один трек.');
@@ -106,8 +137,12 @@ function Radio() {
         disconnectFromRadio();
       }
     } catch (err) {
-      console.error('Connection error:', err);
-      setError('Не удалось подключиться к радио');
+      if (err.status === 401) {
+        handleUnauthorized();
+      } else {
+        console.error('Connection error:', err);
+        setError('Не удалось подключиться к радио');
+      }
     }
   };
 
@@ -143,7 +178,12 @@ function Radio() {
       <audio ref={audioRef} />
       <div className="radio-wave-animation" />
       <div className="radio-player">
-        
+        {!isAuthorized && (
+          <div className="auth-message">
+            <p>Для прослушивания необходима авторизация</p>
+            <button onClick={handleUnauthorized}>Войти</button>
+          </div>
+        )}
         <div className="radio-status">
           <div className={`status-dot ${isConnected ? 'connected' : ''}`} />
           <span>{isConnected ? 'В эфире' : 'Не подключено'}</span>

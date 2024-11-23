@@ -14,10 +14,12 @@ from werkzeug.utils import secure_filename
 import tempfile
 import time
 import queue
+import requests
 
 app = Flask(__name__)
 
 # Constants
+SSO_CHECK_URL = 'https://auth.tubik-corp.ru/api/auth/check'
 SAMPLE_RATE = 44100
 CHANNELS = 2
 CHUNK_DURATION = 0.1  # длительность чанка в секундах
@@ -38,6 +40,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(IMAGES_FOLDER, exist_ok=True)
 os.makedirs(HLS_SEGMENTS_DIR, exist_ok=True)
 
+def check_sso_auth(request):
+    token = request.cookies.get('jwt')
+    if not token:
+        return False
+        
+    headers = {'Cookie': f'jwt={token}'}
+    try:
+        response = requests.get(SSO_CHECK_URL, headers=headers)
+        return response.status_code == 200
+    except:
+        return False
 
 class RadioStream:
     def __init__(self):
@@ -131,6 +144,9 @@ def save_tracks(tracks):
 
 @app.route('/api/radio/hls/playlist.m3u8')
 def get_playlist():
+    if not check_sso_auth(request):
+        return '', 401
+
     playlist_path = f"{HLS_SEGMENTS_DIR}/{HLS_PLAYLIST_FILE}"
     if os.path.exists(playlist_path):
         return send_file(playlist_path, mimetype='application/vnd.apple.mpegurl')
@@ -138,6 +154,9 @@ def get_playlist():
 
 @app.route('/api/radio/hls/<segment>')
 def get_segment(segment):
+    if not check_sso_auth(request):
+        return '', 401
+    
     segment_path = f"{HLS_SEGMENTS_DIR}/{segment}"
     if os.path.exists(segment_path):
         return send_file(segment_path, mimetype='video/MP2T')
@@ -145,6 +164,8 @@ def get_segment(segment):
 
 @app.route('/api/radio/status')
 def get_radio_status():
+    
+
     return jsonify({
         'is_running': radio.is_running,
         'has_tracks': radio._has_tracks(),
@@ -165,10 +186,16 @@ def get_tracks():
 
 @app.route('/api/tracks/<track_id>', methods=['GET'])
 def get_track(track_id):
+    if not check_sso_auth(request):
+        return '', 401
+    
     return send_file(f'{UPLOAD_FOLDER}/{track_id}.mp3')
 
 @app.route('/api/images/<filename>', methods=['GET'])
 def get_image(filename):
+    if not check_sso_auth(request):
+        return '', 401
+    
     try:
         return send_file(f'{IMAGES_FOLDER}/{filename}')
     except:

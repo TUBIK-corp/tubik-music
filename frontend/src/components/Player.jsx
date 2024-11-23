@@ -26,6 +26,28 @@ function Player() {
   const audioRef = useRef(null);
   const DEFAULT_COVER = 'https://wallpapers-clan.com/wp-content/uploads/2023/12/cute-anime-girl-winter-forest-desktop-wallpaper-preview.jpg';
 
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('https://auth.tubik-corp.ru/api/auth/check', {
+        credentials: 'include' // важно для отправки cookies
+      });
+      return response.status === 200;
+    } catch (err) {
+      console.error('Auth check error:', err);
+      return false;
+    }
+  };
+
+  const redirectToAuth = () => {
+    const params = new URLSearchParams({
+      client_id: 'your_client_id',
+      redirect_uri: window.location.origin + '/callback',
+      state: Math.random().toString(36).substring(7),
+      response_type: 'code'
+    });
+    window.location.href = `https://auth.tubik-corp.ru/login?${params}`;
+  };
+
   useEffect(() => {
     try {
       const savedFavorites = localStorage.getItem('userFavorites');
@@ -95,7 +117,14 @@ function Player() {
     return array;
   };
 
-  const handleTrackClick = (track) => {
+  const handleTrackClick = async (track) => {
+    const isAuth = await checkAuth();
+    
+    if (!isAuth) {
+      redirectToAuth();
+      return;
+    }
+
     const isSameTrack = currentTrack?.id === track.id;
     if (isSameTrack) {
       handlePlay();

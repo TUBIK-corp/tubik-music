@@ -9,6 +9,8 @@ import './radio.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    
+    <Route path="/callback" element={<Callback />} />
+    <Route path="/" element={<App />} />
   </React.StrictMode>
 )
