@@ -10,3 +10,4 @@ eventlet
 m3u8
 pathlib
 pydub
+requests
