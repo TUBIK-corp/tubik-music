@@ -1,15 +1,43 @@
 // App.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import Player from './components/Player'
 import AdminPanel from './components/AdminPanel'
-import Login from './components/Login'
 import Radio from './components/Radio'
+import Callback from './components/Callback'
 
-function App() {
+function AppContent() {
   const [isAdmin, setIsAdmin] = useState(false)
-  const [showLogin, setShowLogin] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
-  const [currentPage, setCurrentPage] = useState('player') // 'player' or 'radio'
+  const [currentPage, setCurrentPage] = useState('player')
+  const [isAuthorized, setIsAuthorized] = useState(false)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    checkAuth()
+  }, [])
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/auth/check', {
+        credentials: 'include'
+      })
+      setIsAuthorized(response.status === 200)
+    } catch (err) {
+      console.error('Auth check error:', err)
+      setIsAuthorized(false)
+    }
+  }
+
+  const handleLogin = () => {
+    const params = new URLSearchParams({
+      client_id: 'your_client_id',
+      redirect_uri: window.location.origin + '/callback',
+      state: Math.random().toString(36).substring(7),
+      response_type: 'code'
+    })
+    window.location.href = `https://auth.tubik-corp.ru/login?${params}`
+  }
 
   return (
     <div className="app">
@@ -28,8 +56,8 @@ function App() {
           >
             Радио
           </button>
-          {!isAdmin ? (
-            <button className="login-btn" onClick={() => setShowLogin(true)}>
+          {!isAuthorized ? (
+            <button className="login-btn" onClick={handleLogin}>
               Войти
             </button>
           ) : (
@@ -40,21 +68,10 @@ function App() {
         </div>
       </div>
 
-      {currentPage === 'player' ? <Player /> : <Radio />}
-
-      {showLogin && (
-        <div className="modal-overlay" onClick={() => setShowLogin(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <button className="close-btn" onClick={() => setShowLogin(false)}>×</button>
-            <Login 
-              onLogin={() => {
-                setIsAdmin(true)
-                setShowLogin(false)
-              }} 
-            />
-          </div>
-        </div>
-      )}
+      {currentPage === 'player' ? 
+        <Player isAuthorized={isAuthorized} onUnauthorized={handleLogin} /> : 
+        <Radio isAuthorized={isAuthorized} onUnauthorized={handleLogin} />
+      }
 
       {showAdminPanel && (
         <div className="modal-overlay" onClick={() => setShowAdminPanel(false)}>
@@ -64,8 +81,18 @@ function App() {
           </div>
         </div>
       )}
-
     </div>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/callback" element={<Callback />} />
+        <Route path="/*" element={<AppContent />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 
