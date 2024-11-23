@@ -26,7 +26,7 @@ function Radio() {
 
   const checkAuth = async () => {
     try {
-      const response = await fetch('/api/auth/check', {
+      const response = await fetch('/api/proxy/auth/check', {
         credentials: 'include' // важно для отправки cookies
       });
       setIsAuthorized(response.status === 200);

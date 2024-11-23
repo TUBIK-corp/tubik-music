@@ -119,7 +119,7 @@ function Player() {
 
   const handleTrackClick = async (track) => {
     const isAuth = await checkAuth();
-    alert(isAuth)
+    
     if (!isAuth) {
       redirectToAuth();
       return;
